@@ -17,10 +17,10 @@ It runs on your machine, uses your own Cookidoo subscription session, and talks 
 
 ## Install
 
+Requires Python 3.12+ and `uv`.
+
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e '.[cookidoo,test]'
+uv sync --extra cookidoo --group dev
 ```
 
 The optional `cookidoo-api` dependency is pinned to commit `d7fd1faf94550d7051676f4a11ca77678d9624ac`.
@@ -39,7 +39,7 @@ No Cookidoo password is stored by this project. Runtime auth uses a local cookie
 Interactive login:
 
 ```bash
-cookidoo login
+uv run cookidoo login
 ```
 
 The command prompts for your email and password, performs the Cookidoo login, then stores only cookies.
@@ -47,26 +47,26 @@ The command prompts for your email and password, performs the Cookidoo login, th
 The legacy alias works the same way:
 
 ```bash
-.venv/bin/cookidoo-tm7 login
+uv run cookidoo-tm7 login
 ```
 
 Use explicit account settings when your Cookidoo account does not use the default `ch` / `de-CH` login host:
 
 ```bash
-cookidoo login --country de --locale de-DE --cookie-file ~/.cookidoo-recipes/cookies.json
+uv run cookidoo login --country de --locale de-DE --cookie-file ~/.cookidoo-recipes/cookies.json
 ```
 
 Browser-cookie import:
 
 ```bash
-cookidoo import-cookies --cookie-file ~/.cookidoo-recipes/cookies.json --netscape-file ./cookidoo-cookies.txt
+uv run cookidoo import-cookies --cookie-file ~/.cookidoo-recipes/cookies.json --netscape-file ./cookidoo-cookies.txt
 ```
 
 Stdin import for the two required cookies:
 
 ```bash
 python3 -c 'import getpass,json; print(json.dumps({"oauth2_proxy": getpass.getpass("_oauth2_proxy: "), "v_authenticated": getpass.getpass("v-authenticated: "), "domain": "cookidoo.ch"}))' \
-  | cookidoo import-cookies --cookie-file ~/.cookidoo-recipes/cookies.json --from-json
+  | uv run cookidoo import-cookies --cookie-file ~/.cookidoo-recipes/cookies.json --from-json
 ```
 
 Cookie files are written with `0600` permissions. Group-readable or world-readable cookie files are refused.
@@ -74,7 +74,7 @@ Cookie files are written with `0600` permissions. Group-readable or world-readab
 Check auth:
 
 ```bash
-cookidoo auth-status
+uv run cookidoo auth-status
 ```
 
 ## MCP Server
@@ -82,13 +82,13 @@ cookidoo auth-status
 Run over stdio:
 
 ```bash
-cookidoo-mcp --cookie-file ~/.cookidoo-recipes/cookies.json
+uv run cookidoo-mcp --cookie-file ~/.cookidoo-recipes/cookies.json
 ```
 
 The server uses these account settings for Cookidoo host and account endpoints:
 
 ```bash
-cookidoo-mcp \
+uv run cookidoo-mcp \
   --cookie-file ~/.cookidoo-recipes/cookies.json \
   --country ch \
   --locale de-CH
@@ -99,7 +99,7 @@ cookidoo-mcp \
 MCP registration example:
 
 ```bash
-claude mcp add cookidoo -- /absolute/path/to/.venv/bin/cookidoo-mcp --cookie-file /Users/you/.cookidoo-recipes/cookies.json
+claude mcp add cookidoo -- /absolute/path/to/repo/scripts/cookidoo-mcp --cookie-file /Users/you/.cookidoo-recipes/cookies.json
 ```
 
 Use the equivalent MCP registration command for Codex or another MCP client.
@@ -114,12 +114,10 @@ This repository is also a local plugin. It includes:
 - `skills/cookidoo-recipes/SKILL.md`
 - `scripts/cookidoo-mcp`
 
-The plugin MCP wrapper uses `.venv/bin/python` when it exists, otherwise `python3`. Install dependencies in the repo before enabling the plugin:
+The plugin MCP wrapper uses `uv` when available, so the plugin can sync and run the project environment from the repository checkout. Prepare the checkout once:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e '.[cookidoo,test]'
+uv sync --extra cookidoo --group dev
 ```
 
 The MCP server reads `~/.cookidoo-recipes/cookies.json` by default. Override with environment variables when needed:
@@ -166,16 +164,16 @@ Install the plugin or copy `skills/cookidoo-recipes/SKILL.md` into your agent sk
 ## Development
 
 ```bash
-pytest -q
-python3 -m compileall src tests scripts
-python3 -m build
+uv run pytest -q
+uv run python -m compileall src tests scripts
+uv build
 ```
 
 The live e2e script uses your local cookie jar and can write to your Cookidoo account only when called with `--write`:
 
 ```bash
-python3 scripts/live_e2e.py --cookie-file ~/.cookidoo-recipes/cookies.json
-python3 scripts/live_e2e.py --cookie-file ~/.cookidoo-recipes/cookies.json --write
+uv run python scripts/live_e2e.py --cookie-file ~/.cookidoo-recipes/cookies.json
+uv run python scripts/live_e2e.py --cookie-file ~/.cookidoo-recipes/cookies.json --write
 ```
 
 Keep live outputs under `work/`; that directory is ignored.

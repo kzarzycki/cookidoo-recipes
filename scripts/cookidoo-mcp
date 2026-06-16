@@ -4,12 +4,19 @@ set -euo pipefail
 ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 PYTHON="${COOKIDOO_PYTHON:-}"
 
-if [ -z "$PYTHON" ]; then
-  if [ -x "$ROOT/.venv/bin/python" ]; then
-    PYTHON="$ROOT/.venv/bin/python"
-  else
-    PYTHON="python3"
-  fi
+if [ -n "$PYTHON" ]; then
+  export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+  exec "$PYTHON" -m cookidoo_mcp.server "$@"
+fi
+
+if command -v uv >/dev/null 2>&1; then
+  exec uv run --project "$ROOT" --extra cookidoo python -m cookidoo_mcp.server "$@"
+fi
+
+if [ -x "$ROOT/.venv/bin/python" ]; then
+  PYTHON="$ROOT/.venv/bin/python"
+else
+  PYTHON="python3"
 fi
 
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"

@@ -5,11 +5,10 @@ This project is an unofficial local MCP server for Cookidoo. Treat account acces
 ## Development Setup
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e '.[cookidoo,test]'
-pytest -q
-python3 -m compileall src tests scripts
+uv sync --extra cookidoo --group dev
+uv run pytest -q
+uv run python -m compileall src tests scripts
+uv build
 ```
 
 ## Rules For Changes
@@ -22,8 +21,8 @@ python3 -m compileall src tests scripts
 
 ## Pull Request Checklist
 
-- `pytest -q` passes.
-- `python3 -m compileall src tests scripts` passes.
-- `python3 -m build` passes when packaging metadata changes.
+- `uv run pytest -q` passes.
+- `uv run python -m compileall src tests scripts` passes.
+- `uv build` passes when packaging metadata changes.
 - `git status --ignored --short` shows no staged or tracked credential files.
 - README and skill instructions match any changed tool behavior.
