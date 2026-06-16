@@ -1,0 +1,20 @@
+{
+  "name": "cookidoo-recipes",
+  "interface": {
+    "displayName": "Cookidoo Recipes"
+  },
+  "plugins": [
+    {
+      "name": "cookidoo-recipes",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

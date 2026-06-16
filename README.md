@@ -29,13 +29,29 @@ This repository is also a local plugin. It includes:
 - `scripts/cookidoo-login`
 - `scripts/cookidoo-mcp`
 
-After the plugin is published to a Codex marketplace:
+Install from the GitHub repo; no manual checkout is needed.
+
+Codex:
 
 ```bash
-codex plugin add cookidoo-recipes@<marketplace>
+codex plugin marketplace add https://github.com/kzarzycki/cookidoo-recipes --ref main
+codex plugin add cookidoo-recipes@cookidoo-recipes
 ```
 
-For Claude, install the same plugin bundle through your Claude Code plugin source. Reload the agent session after installation.
+Claude Code:
+
+```text
+/plugin marketplace add https://github.com/kzarzycki/cookidoo-recipes
+/plugin install cookidoo-recipes@cookidoo-recipes
+/reload-plugins
+```
+
+After updating the repo, refresh the marketplace snapshot before reinstalling:
+
+```bash
+codex plugin marketplace upgrade cookidoo-recipes
+codex plugin add cookidoo-recipes@cookidoo-recipes
+```
 
 Verify that the plugin loaded:
 

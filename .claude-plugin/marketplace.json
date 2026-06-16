@@ -1,0 +1,13 @@
+{
+  "name": "cookidoo-recipes",
+  "owner": {
+    "name": "Krzysztof Zarzycki"
+  },
+  "plugins": [
+    {
+      "name": "cookidoo-recipes",
+      "source": "./",
+      "description": "Search, translate, and save Cookidoo recipes through a local MCP server"
+    }
+  ]
+}
