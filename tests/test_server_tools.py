@@ -1,0 +1,244 @@
+import asyncio
+
+from cookidoo_mcp.client import CookidooClient
+from cookidoo_mcp.models import RecipeDetail, RecipeSummary
+from cookidoo_mcp.server import CookidooTools
+
+
+class FakeClient:
+    async def auth_status(self):
+        return {"authenticated": True, "message": "cookie jar ready"}
+
+    async def search(self, query):
+        assert query.tm_model == "TM7"
+        return []
+
+    async def get_recipe(self, recipe_id):
+        return {"id": recipe_id, "title": "Recipe"}
+
+    async def list_my_recipes(self, locale="de-CH"):
+        return []
+
+    async def get_collection(self, collection_id, locale="pl-PL"):
+        return {
+            "id": collection_id,
+            "title": "SOUS-VIDE",
+            "recipes": [{"id": "r500651", "title": "Steki z polędwicy wołowej"}],
+            "locale": locale,
+        }
+
+    async def upload_recipe_image(self, source_image_url, locale="en"):
+        return {
+            "image": "prod/img/customer-recipe/uploaded.jpg",
+            "source_image_url": source_image_url,
+            "locale": locale,
+        }
+
+    async def create_recipe(self, draft, dry_run=True):
+        return {"dry_run": dry_run, "payload": draft.to_create_payload()}
+
+
+class DiscoveryFakeClient:
+    def __init__(self):
+        self.search_queries = []
+        self.collection_ids = []
+
+    async def auth_status(self):
+        return {"authenticated": True, "message": "cookie jar ready"}
+
+    async def search(self, query):
+        self.search_queries.append((query.country, query.locale, query.language, query.query))
+        if query.country == "pl" and query.query == "z osłoną noża miksującego":
+            return [RecipeSummary(id="r500651", title="Steki z polędwicy wołowej")]
+        return []
+
+    async def get_recipe(self, recipe_id):
+        return RecipeDetail.from_upstream(
+            {
+                "id": recipe_id,
+                "name": "Steki z polędwicy wołowej",
+                "collections": [{"id": "col272853", "name": "SOUS-VIDE"}],
+                "ingredients": [{"description": "4", "name": "steki z polędwicy wołowej"}],
+                "total_time": 8400,
+            }
+        )
+
+    async def get_collection(self, collection_id, locale="pl-PL"):
+        self.collection_ids.append(collection_id)
+        return {
+            "id": collection_id,
+            "title": "SOUS-VIDE",
+            "recipes": [
+                {"id": "r753622", "title": "Steki wołowe sous-vide", "source": "collection"},
+                {"id": "r500651", "title": "Steki z polędwicy wołowej", "source": "collection"},
+            ],
+        }
+
+
+def test_tools_return_auth_status():
+    tools = CookidooTools(FakeClient())
+
+    assert asyncio.run(tools.auth_status()) == {"authenticated": True, "message": "cookie jar ready"}
+
+
+def test_tools_search_builds_query():
+    tools = CookidooTools(FakeClient())
+
+    assert asyncio.run(tools.search(query="chicken", include_my_recipes=True)) == {"results": []}
+
+
+def test_tools_get_collection_returns_recipes():
+    tools = CookidooTools(FakeClient())
+
+    result = asyncio.run(tools.get_collection("col272853", locale="pl-PL"))
+
+    assert result["id"] == "col272853"
+    assert result["recipes"][0]["id"] == "r500651"
+    assert result["locale"] == "pl-PL"
+
+
+def test_tools_discover_recipes_searches_multiple_countries_and_expands_collections():
+    client = DiscoveryFakeClient()
+    tools = CookidooTools(client)
+
+    result = asyncio.run(tools.discover_recipes(
+        query="slow-cooking tenderloin in savory sauce",
+        localized_queries=[
+            {"country": "pl", "language": "pl", "query": "z osłoną noża miksującego"},
+            {"country": "pl", "language": "pl", "query": "polędwicy wołowej"},
+        ],
+        limit_per_query=5,
+    ))
+
+    assert ("pl", "pl-PL", "pl", "z osłoną noża miksującego") in client.search_queries
+    assert ("ch", "de-CH", "de", "z osłoną noża miksującego") not in client.search_queries
+    assert "col272853" in client.collection_ids
+    assert [item["id"] for item in result["results"]] == ["r500651", "r753622"]
+    assert "polędwicy" in result["results"][0]["matched_terms"]
+    assert result["results"][0]["provenance"][0]["kind"] == "search"
+    assert result["results"][0]["provenance"][1]["kind"] == "collection"
+
+
+def test_tools_create_defaults_to_dry_run():
+    tools = CookidooTools(FakeClient())
+
+    result = asyncio.run(tools.create_recipe(
+        title="Saved recipe",
+        ingredients=["1 egg"],
+        steps=[{"title": "Mix", "text": "Mix.", "speed": "3"}],
+    ))
+
+    assert result["dry_run"] is True
+    assert result["payload"]["tools"] == ["TM7"]
+    assert result["confirmation_token"]
+
+
+def test_tools_create_accepts_image_key():
+    tools = CookidooTools(FakeClient())
+
+    result = asyncio.run(tools.create_recipe(
+        title="Saved recipe",
+        ingredients=["1 egg"],
+        steps=["Mix."],
+        image="prod/img/customer-recipe/saved.jpg",
+    ))
+
+    assert result["payload"]["image"] == "prod/img/customer-recipe/saved.jpg"
+    assert result["payload"]["cookidoo"]["patch"]["image"] == "prod/img/customer-recipe/saved.jpg"
+
+
+def test_tools_upload_recipe_image_defaults_to_dry_run():
+    tools = CookidooTools(FakeClient())
+
+    result = asyncio.run(tools.upload_recipe_image(
+        source_image_url="https://assets.tmecosys.com/image/upload/{transformation}/img/recipe/source",
+        locale="en",
+    ))
+
+    assert result["dry_run"] is True
+    assert result["payload"]["source_image_url"].startswith("https://assets.tmecosys.com/")
+    assert result["confirmation_token"]
+
+
+def test_tools_upload_recipe_image_requires_confirmation_token_for_write():
+    tools = CookidooTools(FakeClient())
+
+    result = asyncio.run(tools.upload_recipe_image(
+        source_image_url="https://assets.tmecosys.com/image/upload/{transformation}/img/recipe/source",
+        locale="en",
+        dry_run=False,
+    ))
+
+    assert result["error"]["code"] == "confirmation_required"
+
+
+def test_tools_upload_recipe_image_allows_write_after_matching_dry_run():
+    tools = CookidooTools(FakeClient())
+    dry_run = asyncio.run(tools.upload_recipe_image(
+        source_image_url="https://assets.tmecosys.com/image/upload/{transformation}/img/recipe/source",
+        locale="en",
+    ))
+
+    result = asyncio.run(tools.upload_recipe_image(
+        source_image_url="https://assets.tmecosys.com/image/upload/{transformation}/img/recipe/source",
+        locale="en",
+        dry_run=False,
+        confirmation_token=dry_run["confirmation_token"],
+    ))
+
+    assert result["image"] == "prod/img/customer-recipe/uploaded.jpg"
+    assert result["locale"] == "en"
+
+
+def test_tools_create_requires_confirmation_token_for_write():
+    tools = CookidooTools(FakeClient())
+
+    result = asyncio.run(tools.create_recipe(
+        title="Saved recipe",
+        ingredients=["1 egg"],
+        steps=[{"title": "Mix", "text": "Mix.", "speed": "3"}],
+        dry_run=False,
+    ))
+
+    assert result["error"]["code"] == "confirmation_required"
+
+
+def test_tools_create_allows_write_after_matching_dry_run():
+    tools = CookidooTools(FakeClient())
+    dry_run = asyncio.run(tools.create_recipe(
+        title="Saved recipe",
+        ingredients=["1 egg"],
+        steps=[{"title": "Mix", "text": "Mix.", "speed": "3"}],
+    ))
+
+    result = asyncio.run(tools.create_recipe(
+        title="Saved recipe",
+        ingredients=["1 egg"],
+        steps=[{"title": "Mix", "text": "Mix.", "speed": "3"}],
+        dry_run=False,
+        confirmation_token=dry_run["confirmation_token"],
+    ))
+
+    assert result["dry_run"] is False
+
+
+def test_default_client_can_be_constructed_without_upstream_import():
+    client = CookidooClient(upstream=None, allow_missing_upstream=True)
+
+    assert client is not None
+
+
+def test_build_tools_uses_real_upstream_mode(tmp_path):
+    from cookidoo_mcp.server import build_tools
+
+    cookie_file = tmp_path / "cookies.json"
+    cookie_file.write_text(
+        '[{"key":"_oauth2_proxy","value":"oauth","domain":"cookidoo.ch","path":"/"},'
+        '{"key":"v-authenticated","value":"v","domain":"cookidoo.ch","path":"/"}]',
+        encoding="utf-8",
+    )
+    cookie_file.chmod(0o600)
+
+    tools = build_tools(str(cookie_file))
+
+    assert tools.client.allow_missing_upstream is False

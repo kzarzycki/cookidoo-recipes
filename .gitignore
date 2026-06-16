@@ -1,0 +1,39 @@
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Virtual environments and local config
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# Cookidoo credentials and browser exports
+*.cookie
+*.cookies
+*cookie*.json
+*cookies*.json
+*cookie*.txt
+*cookies*.txt
+cookidoo-cookies.txt
+cookies.json
+
+# Live/debug artifacts
+work/
+outputs/
+*.network-request
+*.network-response

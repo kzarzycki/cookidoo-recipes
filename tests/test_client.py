@@ -1,0 +1,131 @@
+import asyncio
+
+from cookidoo_mcp.client import CookidooClient, CookidooClientError
+from cookidoo_mcp.models import RecipeDraft, SearchQuery
+from yarl import URL
+
+
+class FakeUpstream:
+    def __init__(self):
+        self.created_payloads = []
+
+    async def search_recipes(self, **kwargs):
+        return [
+            {"id": "r1", "name": "Chicken Chili", "url": "/recipes/r1", "totalTime": 30},
+            {"id": "r2", "title": "Beef Stew", "url": "/recipes/r2"},
+        ]
+
+    async def get_recipe(self, recipe_id):
+        return {
+            "id": recipe_id,
+            "name": "Chicken Chili",
+            "ingredients": ["chicken", "cream cheese"],
+            "steps": [{"title": "Cook", "text": "Cook gently."}],
+            "nutrition": {"carbohydrates": "19 g", "protein": "58 g"},
+        }
+
+    async def get_recipe_details(self, recipe_id):
+        return await self.get_recipe(recipe_id)
+
+    async def list_created_recipes(self, locale):
+        return [
+            {"id": "mine1", "name": "Chicken translated", "url": "/created/mine1"},
+            {"id": "mine2", "name": "Chocolate cake", "url": "/created/mine2"},
+        ]
+
+    async def create_recipe(self, payload, dry_run=False):
+        self.created_payloads.append((payload, dry_run))
+        if dry_run:
+            return {"dry_run": True, "payload": payload}
+        return {"id": "created1", "url": "/created/created1", "payload": payload}
+
+
+class FailingUpstream:
+    async def search_recipes(self, **kwargs):
+        raise RuntimeError("Cookie: secret-token raw upstream failure")
+
+
+class InternalEndpointUpstream:
+    def __init__(self):
+        self.api_endpoint = URL("https://cookidoo.ch")
+        self.calls = []
+
+    async def _request_json(self, method, url, operation, **kwargs):
+        self.calls.append((method, str(url), operation, kwargs.get("json")))
+        if method == "post":
+            return {"recipeId": "created-live-test"}
+        return None
+
+
+def test_search_merges_my_recipes_client_side():
+    client = CookidooClient(upstream=FakeUpstream())
+    query = SearchQuery(query="chicken", include_my_recipes=True)
+
+    results = asyncio.run(client.search(query))
+
+    assert [item.source for item in results] == ["cookidoo", "cookidoo", "my_recipes"]
+    assert results[-1].id == "mine1"
+
+
+def test_get_recipe_normalizes_nutrition_source():
+    client = CookidooClient(upstream=FakeUpstream())
+
+    detail = asyncio.run(client.get_recipe("r1"))
+
+    assert detail.id == "r1"
+    assert detail.nutrition["carbohydrates"] == "19 g"
+    assert detail.nutrition_source == "official"
+
+
+def test_create_recipe_supports_dry_run():
+    upstream = FakeUpstream()
+    client = CookidooClient(upstream=upstream)
+    draft = RecipeDraft(title="Test", ingredients=["x"], steps=[])
+
+    result = asyncio.run(client.create_recipe(draft, dry_run=True))
+
+    assert result["dry_run"] is True
+    assert result["payload"]["tools"] == ["TM7"]
+    assert result["payload"]["cookidoo"]["create"] == {"recipeName": "Test"}
+
+
+def test_create_recipe_uses_cookidoo_post_then_patch_fallback():
+    upstream = InternalEndpointUpstream()
+    client = CookidooClient(upstream=upstream)
+    draft = RecipeDraft(
+        title="Live Test",
+        language="de-CH",
+        servings=2,
+        ingredients=["1 egg"],
+        steps=[{"text": "Mix 10 sec/speed 3.", "time_seconds": 10, "speed": "3"}],
+    )
+
+    result = asyncio.run(client.create_recipe(draft, dry_run=False))
+
+    assert result["id"] == "created-live-test"
+    assert upstream.calls[0] == (
+        "post",
+        "https://cookidoo.ch/created-recipes/de-CH",
+        "create recipe",
+        {"recipeName": "Live Test"},
+    )
+    assert upstream.calls[1][0:3] == (
+        "patch",
+        "https://cookidoo.ch/created-recipes/de-CH/created-live-test",
+        "update recipe",
+    )
+    assert upstream.calls[1][3]["ingredients"] == [{"type": "INGREDIENT", "text": "1 egg"}]
+    assert upstream.calls[1][3]["tools"] == ["TM7"]
+
+
+def test_sanitizes_upstream_errors():
+    client = CookidooClient(upstream=FailingUpstream())
+    query = SearchQuery(query="chicken")
+
+    try:
+        asyncio.run(client.search(query))
+    except CookidooClientError as exc:
+        assert "secret-token" not in str(exc)
+        assert "search failed" in str(exc)
+    else:
+        raise AssertionError("expected sanitized error")
