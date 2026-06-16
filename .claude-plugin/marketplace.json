@@ -1,13 +1,21 @@
 {
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "cookidoo-recipes",
+  "description": "Cookidoo recipe search, translation, image copying, and custom recipe creation through a local MCP server",
   "owner": {
     "name": "Krzysztof Zarzycki"
   },
   "plugins": [
     {
       "name": "cookidoo-recipes",
+      "version": "0.1.0",
       "source": "./",
-      "description": "Search, translate, and save Cookidoo recipes through a local MCP server"
+      "description": "Search, translate, and save Cookidoo recipes through a local MCP server",
+      "author": {
+        "name": "Krzysztof Zarzycki"
+      },
+      "category": "productivity",
+      "homepage": "https://github.com/kzarzycki/cookidoo-recipes"
     }
   ]
 }
