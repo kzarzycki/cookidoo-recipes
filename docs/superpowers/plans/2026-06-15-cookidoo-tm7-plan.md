@@ -1,8 +1,8 @@
-# Cookidoo TM7 Implementation Plan
+# Cookidoo Recipes Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a local MCP server and skill for Cookidoo search, access, translation workflow, and TM7 custom recipe creation.
+**Goal:** Build a local MCP server and skill for Cookidoo search, access, translation workflow, and custom recipe creation.
 
 **Architecture:** A Python package contains normalized models, a Cookidoo adapter, MCP tools, and auth helpers. The MCP tools return stable JSON dictionaries and keep unofficial upstream behavior behind one adapter.
 
@@ -56,11 +56,11 @@
 ### Task 5: Skill And Docs
 
 **Files:**
-- Create: `skills/cookidoo-tm7/SKILL.md`
+- Create: `skills/cookidoo-recipes/SKILL.md`
 - Create: `README.md`
 - Create: `outputs/cookidoo-tm7-summary.md`
 
-- [ ] Write the skill with triggers, workflow, tool order, TM7 conventions, and write-confirmation guardrail.
+- [ ] Write the skill with triggers, workflow, tool order, Thermomix conventions, and write-confirmation guardrail.
 - [ ] Write installation and verification docs.
 - [ ] Link the completed deliverable from `outputs/`.
 

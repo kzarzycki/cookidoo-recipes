@@ -36,6 +36,10 @@ TECHNIQUE_QUERY_EXPANSIONS_BY_LANGUAGE = {
 }
 
 
+def _default_cookie_path() -> str:
+    return str(Path.home() / ".cookidoo-recipes" / "cookies.json")
+
+
 class CookidooTools:
     def __init__(self, client: Any) -> None:
         self.client = client
@@ -76,7 +80,7 @@ class CookidooTools:
         query: str,
         related_queries: list[str] | None = None,
         localized_queries: list[dict[str, str]] | None = None,
-        tm_model: str = "TM7",
+        tm_model: str | None = None,
         limit_per_query: int = 8,
         max_results: int = 40,
         expand_collections: bool = True,
@@ -269,12 +273,12 @@ class CookidooTools:
         title: str,
         ingredients: list[str],
         steps: list[dict[str, Any] | str],
-        language: str = "de-CH",
+        language: str = "en",
         servings: int | None = None,
         image: str | None = None,
         notes: str = "",
         tags: list[str] | None = None,
-        tm_model: str = "TM7",
+        tm_model: str | None = None,
         dry_run: bool = True,
         confirmation_token: str | None = None,
     ) -> dict[str, Any]:
@@ -318,9 +322,18 @@ class CookidooTools:
         return result
 
 
-def build_tools(cookie_file: str | None = None) -> CookidooTools:
+def build_tools(
+    cookie_file: str | None = None,
+    default_country: str = "ch",
+    default_locale: str = "de-CH",
+) -> CookidooTools:
     auth_store = CookieAuthStore(cookie_file) if cookie_file else None
-    client = CookidooClient(auth_store=auth_store, allow_missing_upstream=False)
+    client = CookidooClient(
+        auth_store=auth_store,
+        allow_missing_upstream=False,
+        default_country=default_country,
+        default_locale=default_locale,
+    )
     return CookidooTools(client)
 
 
@@ -330,7 +343,7 @@ def build_mcp(tools: CookidooTools) -> Any:
     except Exception as exc:  # pragma: no cover - depends on optional package
         raise RuntimeError("fastmcp is required to run the MCP server") from exc
 
-    mcp = FastMCP("cookidoo-tm7")
+    mcp = FastMCP("cookidoo-recipes")
 
     @mcp.tool()
     async def cookidoo_auth_status() -> dict[str, Any]:
@@ -339,9 +352,9 @@ def build_mcp(tools: CookidooTools) -> Any:
     @mcp.tool()
     async def cookidoo_search(
         query: str = "",
-        country: str = "ch",
-        locale: str = "de-CH",
-        language: str = "de",
+        country: str | None = None,
+        locale: str = "en",
+        language: str | None = None,
         include_ingredients: list[str] | None = None,
         exclude_ingredients: list[str] | None = None,
         difficulty: str | None = None,
@@ -350,7 +363,7 @@ def build_mcp(tools: CookidooTools) -> Any:
         servings: int | None = None,
         min_rating: float | None = None,
         tags: list[str] | None = None,
-        tm_model: str = "TM7",
+        tm_model: str | None = None,
         page: int = 1,
         limit: int = 10,
         include_my_recipes: bool = False,
@@ -379,7 +392,7 @@ def build_mcp(tools: CookidooTools) -> Any:
         query: str,
         related_queries: list[str] | None = None,
         localized_queries: list[dict[str, str]] | None = None,
-        tm_model: str = "TM7",
+        tm_model: str | None = None,
         limit_per_query: int = 8,
         max_results: int = 40,
         expand_collections: bool = True,
@@ -425,12 +438,12 @@ def build_mcp(tools: CookidooTools) -> Any:
         title: str,
         ingredients: list[str],
         steps: list[dict[str, Any] | str],
-        language: str = "de-CH",
+        language: str = "en",
         servings: int | None = None,
         image: str | None = None,
         notes: str = "",
         tags: list[str] | None = None,
-        tm_model: str = "TM7",
+        tm_model: str | None = None,
         dry_run: bool = True,
         confirmation_token: str | None = None,
     ) -> dict[str, Any]:
@@ -452,22 +465,32 @@ def build_mcp(tools: CookidooTools) -> Any:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run the Cookidoo TM7 MCP server.")
+    parser = argparse.ArgumentParser(description="Run the Cookidoo MCP server.")
     parser.add_argument(
         "--cookie-file",
-        default=os.environ.get("COOKIDOO_COOKIE_FILE"),
+        default=os.environ.get("COOKIDOO_COOKIE_FILE", _default_cookie_path()),
         help="Path to the Cookidoo cookie jar JSON file.",
+    )
+    parser.add_argument(
+        "--country",
+        default=os.environ.get("COOKIDOO_COUNTRY", "ch"),
+        help="Cookidoo account country/TLD used for the upstream host.",
+    )
+    parser.add_argument(
+        "--locale",
+        default=os.environ.get("COOKIDOO_LOCALE", "de-CH"),
+        help="Cookidoo account locale used for account endpoints.",
     )
     args = parser.parse_args(argv)
     try:
-        tools = build_tools(args.cookie_file)
+        tools = build_tools(args.cookie_file, default_country=args.country, default_locale=args.locale)
         mcp = build_mcp(tools)
         mcp.run(show_banner=False)
         return 0
     except KeyboardInterrupt:
         return 130
     except (CookidooClientError, RuntimeError) as exc:
-        print(f"cookidoo-tm7-mcp: {exc}", file=sys.stderr)
+        print(f"cookidoo-mcp: {exc}", file=sys.stderr)
         return 1
 
 

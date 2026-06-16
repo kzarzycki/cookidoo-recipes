@@ -1,8 +1,8 @@
-# Cookidoo TM7 Design
+# Cookidoo Recipes Design
 
 ## Product
 
-Build a local Cookidoo assistant for a TM7 owner who wants recipe search, recipe access, translation, and custom recipe creation across languages. The first workflow is: search Cookidoo in any useful language, inspect official recipe details and nutrition, translate or adapt the recipe for TM7, then save it as a Cookidoo custom recipe. Saved translations should be searchable together with official catalogue results when requested.
+Build a local Cookidoo assistant for recipe search, recipe access, translation, and custom recipe creation across languages. The first workflow is: search Cookidoo in any useful language, inspect official recipe details and nutrition, translate or adapt the recipe, then save it as a Cookidoo custom recipe. Saved translations should be searchable together with official catalogue results when requested.
 
 The tool is local and subscription-backed. It does not claim official Vorwerk support. It uses the user's own Cookidoo session and treats every upstream endpoint as unofficial and likely to change.
 
@@ -20,7 +20,7 @@ In scope:
 
 Out of scope:
 
-- Sending recipes directly to the TM7 device.
+- Sending recipes directly to a Thermomix device.
 - Bypassing Cookidoo subscription, region, or account restrictions.
 - Browser automation that extracts private cookies without explicit user action.
 - Guaranteed compatibility with every future Cookidoo API change.
@@ -34,7 +34,7 @@ The implementation has four layers:
 3. `tools`: MCP tool functions with validation, normalization, and stderr logging.
 4. `skill`: operational guidance for agents so normal requests use the tools in the right order.
 
-The MCP layer never exposes upstream objects directly. It returns JSON-friendly dictionaries shaped by the internal model layer. That makes tests deterministic and gives one place to patch if `cookidoo-api` changes. The verified upstream base is `miaucl/cookidoo-api` at commit `d7fd1faf94550d7051676f4a11ca77678d9624ac`, including `search_recipes`, `get_recipe_details`, `get_custom_recipe`, and `ThermomixMachineType.TM7`.
+The MCP layer never exposes upstream objects directly. It returns JSON-friendly dictionaries shaped by the internal model layer. That makes tests deterministic and gives one place to patch if `cookidoo-api` changes. The verified upstream base is `miaucl/cookidoo-api` at commit `d7fd1faf94550d7051676f4a11ca77678d9624ac`, including `search_recipes`, `get_recipe_details`, and `get_custom_recipe`.
 
 ## Auth
 
@@ -55,7 +55,7 @@ The project does not store the Cookidoo password. If an interactive login helper
 - servings
 - minimum rating
 - tags
-- TM model, default `TM7`
+- Optional TM model
 - pagination
 - `include_my_recipes`
 
@@ -67,13 +67,13 @@ Catalogue search and custom recipe listing are separate upstream calls. When `in
 
 ## Create
 
-`cookidoo_create_recipe` accepts a normalized recipe draft with target language/locale, servings, ingredients, steps, notes, tags, optional customer-recipe image key, and TM model. The default model is `TM7`. The tool is designed for translated or agent-authored custom recipes. A dry run returns a confirmation token, and server-side write calls require that token for the exact reviewed payload.
+`cookidoo_create_recipe` accepts a normalized recipe draft with target language/locale, servings, ingredients, steps, notes, tags, optional customer-recipe image key, and optional TM model. The tool is designed for translated or agent-authored custom recipes. A dry run returns a confirmation token, and server-side write calls require that token for the exact reviewed payload.
 
 ## Translation Workflow
 
-Agents should search in the source language, fetch details, translate visible content into the requested target language, preserve measurable quantities, upload official source images with `cookidoo_upload_recipe_image`, adapt method text for TM7 conventions, and save only after confirmation. Control details such as language or metric policy stay out of the recipe title. Default target locale is `de-CH` unless the user requests Polish, English, or another locale.
+Agents should search in the source language, fetch details, translate visible content into the requested target language, preserve measurable quantities, upload official source images with `cookidoo_upload_recipe_image`, adapt method text when a target machine is requested, and save only after confirmation. Control details such as language or metric policy stay out of the recipe title. Default target locale is `en` unless the user requests another locale.
 
-## TM7 Conventions
+## Thermomix Conventions
 
 - Use Browning for searing and sauteing steps.
 - Use Open Cooking for reductions, risotto-like stirring, and braises where lid-off evaporation matters.
@@ -90,7 +90,7 @@ Tool errors should identify the failing operation and likely user action: refres
 - The MCP server starts as a stdio server.
 - All tools are importable and have JSON-schema-friendly signatures.
 - Missing auth produces a controlled error.
-- Search parameters normalize language, locale, country, and TM7 defaults.
+- Search parameters normalize language, locale, country, and optional machine filters.
 - Custom recipe search merge is deterministic and source-labelled.
 - Nutrition filtering workflow is encoded in the skill.
 - Cookie files are written with owner-only permissions.

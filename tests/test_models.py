@@ -3,13 +3,13 @@ from dataclasses import dataclass
 from cookidoo_mcp.models import RecipeDetail, RecipeDraft, RecipeStep, RecipeSummary, SearchQuery
 
 
-def test_search_query_defaults_to_swiss_tm7():
+def test_search_query_defaults_to_unfiltered_catalogue_search():
     query = SearchQuery(query="Hähnchen")
 
-    assert query.country == "ch"
-    assert query.locale == "de-CH"
-    assert query.language == "de"
-    assert query.tm_model == "TM7"
+    assert query.country is None
+    assert query.locale == "en"
+    assert query.language is None
+    assert query.tm_model is None
     assert query.page == 1
     assert query.limit == 10
 
@@ -36,6 +36,7 @@ def test_search_query_maps_to_upstream_signature():
         query="chicken",
         language="en",
         country="ch",
+        tm_model="TM6",
         include_ingredients=["chicken"],
         max_total_time_minutes=30,
         max_prep_time_minutes=10,
@@ -46,16 +47,26 @@ def test_search_query_maps_to_upstream_signature():
     params = query.upstream_params()
 
     assert params["locale"] == "en"
+    assert params["languages"] == ["en"]
     assert params["countries"] == ["ch"]
     assert params["ingredients"] == ["chicken"]
     assert params["total_time"] == 1800
     assert params["preparation_time"] == 600
     assert params["ratings"] == ["4"]
-    assert params["tmv"] == ["TM7"]
+    assert params["tmv"] == ["TM6"]
     assert params["page_size"] == 12
 
 
-def test_recipe_draft_payload_marks_generated_and_tm7():
+def test_search_query_omits_optional_filters_when_unspecified():
+    params = SearchQuery(query="beef").upstream_params()
+
+    assert params["locale"] == "en"
+    assert params["languages"] is None
+    assert params["countries"] is None
+    assert params["tmv"] is None
+
+
+def test_recipe_draft_payload_marks_generated_and_machine_when_supplied():
     draft = RecipeDraft(
         title="Kremowy kurczak",
         language="pl-PL",
@@ -73,6 +84,7 @@ def test_recipe_draft_payload_marks_generated_and_tm7():
             )
         ],
         notes="Translated and adapted for TM7.",
+        tm_model="TM7",
     )
 
     payload = draft.to_create_payload()
@@ -83,6 +95,19 @@ def test_recipe_draft_payload_marks_generated_and_tm7():
     assert payload["source"] == "generated_adapted"
     assert payload["steps"][0]["reverse"] is True
     assert payload["steps"][0]["mode"] == "Browning"
+
+
+def test_recipe_draft_omits_machine_when_unspecified():
+    draft = RecipeDraft(
+        title="Kremowy kurczak",
+        ingredients=["600 g chicken"],
+        steps=["Cook gently."],
+    )
+
+    payload = draft.to_create_payload()
+
+    assert "tools" not in payload
+    assert "tools" not in payload["cookidoo"]["patch"]
 
 
 def test_recipe_draft_includes_cookidoo_image_key_when_supplied():

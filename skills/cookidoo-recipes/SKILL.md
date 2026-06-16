@@ -1,11 +1,11 @@
 ---
-name: cookidoo-tm7
-description: Search Cookidoo recipes, inspect official details and nutrition, translate/adapt recipes, and save TM7 custom recipes through the local Cookidoo TM7 MCP server.
+name: cookidoo-recipes
+description: Search Cookidoo recipes, inspect official details and nutrition, translate/adapt recipes, and save custom recipes through the local Cookidoo MCP server.
 ---
 
-# Cookidoo TM7
+# Cookidoo Recipes
 
-Use this skill when the user asks about Cookidoo, Thermomix TM7 recipes, recipe search across languages, translating Cookidoo recipes, low-carb filtering, or saving custom recipes to Cookidoo.
+Use this skill when the user asks about Cookidoo, Thermomix recipes, recipe search across languages, translating Cookidoo recipes, nutrition values, or saving custom recipes to Cookidoo.
 
 ## Tools
 
@@ -20,25 +20,23 @@ Use the local MCP tools when available:
 - `cookidoo_upload_recipe_image`
 - `cookidoo_create_recipe`
 
-If the tools are missing, tell the user the Cookidoo TM7 MCP server is not connected.
+If the tools are missing, tell the user the Cookidoo MCP server is not connected.
 
 `cookidoo_create_recipe` accepts an optional `image` field. Pass only Cookidoo-compatible customer recipe image keys such as `prod/img/customer-recipe/example.jpg`; official asset URLs are not accepted by the recipe patch endpoint.
 
 Use `cookidoo_upload_recipe_image` to copy an official Cookidoo asset URL into a customer recipe image key. It uses the same dry-run and confirmation-token pattern as recipe creation.
 
-## Default Settings
+## Defaults
 
-- Country: `ch`
-- Locale: `de-CH`
-- Machine: `TM7`
-- Search language: language-agnostic by default. Use `cookidoo_discover_recipes` unless the user asks for a specific language, country, or exact locale.
-- Save language: `de-CH` unless the user asks for Polish, English, or another locale.
+- Search: language-agnostic. Use `cookidoo_discover_recipes` unless the user asks for a specific language, country, locale, or exact filter.
+- Machine: no default. Pass `tm_model` only when the user asks for a Thermomix model or has configured a preference.
+- Save language: use the user-requested target language. If none is given, use `en`.
 
 ## Search Workflow
 
 1. Check `cookidoo_auth_status`.
-2. Call `cookidoo_discover_recipes` for normal recipe discovery. Pass the user's English intent as `query`. Put locale-specific helper terms in `localized_queries`, not global `related_queries`.
-3. Use `cookidoo_search` only when the user asks for a specific language, country, locale, or exact narrow search.
+2. Call `cookidoo_discover_recipes` for normal recipe discovery. Pass the user's intent as `query`. Put locale-specific helper terms in `localized_queries`, not global `related_queries`.
+3. Use `cookidoo_search` when the user asks for a specific language, country, locale, machine, ingredient filter, or exact narrow search.
 4. For technique-driven searches, add local technique and accessory terms. For slow/low-temperature meat, use localized queries such as `basse température`, `Niedertemperatur`, `baja temperatura`, `wolno gotowane`, `osłona noża miksującego`, and meat-cut terms in the matching local language.
 5. `cookidoo_discover_recipes` expands relevant collections internally. Do not expose collection mechanics unless the user asks why something was or was not found.
 6. Track provenance for each candidate: query, country, language, source, rank if returned by search, and collection id if found through internal collection expansion.
@@ -59,14 +57,15 @@ Search results do not reliably include nutrition. Do not filter by carbs from se
 5. Preserve quantities and metric units unless the user asks to convert them.
 6. Preserve Cookidoo step annotations when translating text. Update annotation offsets and lengths to match the translated marker text.
 7. Copy the source image when possible. If the source image is already a customer-recipe image key, pass it as `image` to `cookidoo_create_recipe`. If the source image is an official Cookidoo asset URL, run `cookidoo_upload_recipe_image` and pass the returned `image` key to `cookidoo_create_recipe`. Do not pass official asset URLs directly as recipe images.
-8. Show a dry run with title, language, servings, image status, ingredients, steps, notes, and the returned confirmation token.
-9. Ask for explicit confirmation before setting `dry_run=false`.
-10. Save with `cookidoo_create_recipe` using the confirmation token from the reviewed dry run.
-11. Read back the saved recipe and verify title, ingredients count, steps count, machine tools, and image. If image copy did not complete, say so explicitly.
+8. Pass `tm_model` only when the saved recipe should be tagged for a specific Thermomix model.
+9. Show a dry run with title, language, servings, machine tag if any, image status, ingredients, steps, notes, and the returned confirmation token.
+10. Ask for explicit confirmation before setting `dry_run=false`.
+11. Save with `cookidoo_create_recipe` using the confirmation token from the reviewed dry run.
+12. Read back the saved recipe and verify title, ingredients count, steps count, machine tag if any, and image.
 
 Never write to the user's Cookidoo account without an explicit confirmation in the current conversation.
 
-## TM7 Conventions
+## Thermomix Conventions
 
 - Browning: searing meat, sauteing onion, toasting rice, lid off.
 - Open Cooking: reductions, risotto, braises, and sauces that need evaporation.
@@ -74,7 +73,7 @@ Never write to the user's Cookidoo account without an explicit confirmation in t
 - Varoma: steaming.
 - Dairy: add near the end and keep at or below 90 C unless the source says otherwise.
 
-Use time, temperature, direction, speed, and mode when the source supports it. If adapting from a non-TM7 recipe, say the saved method is generated/adapted content.
+Use time, temperature, direction, speed, and mode when the source supports it. If adapting from a recipe that was not written for the requested machine, say the saved method is generated/adapted content.
 
 ## Error Handling
 

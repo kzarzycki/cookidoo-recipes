@@ -5,7 +5,7 @@ This project uses a Cookidoo session owned by the operator. Cookidoo has no publ
 ## Credential Handling
 
 - The project does not store a Cookidoo password.
-- `cookidoo-tm7 login` reads the password interactively and stores only the resulting cookie jar.
+- `cookidoo login` reads the password interactively and stores only the resulting cookie jar.
 - Cookie jars are written with `0600` permissions.
 - Cookie files, browser exports, live request captures, and `work/` outputs are ignored by git.
 - Write tools default to dry run and require a confirmation token for the exact reviewed payload.

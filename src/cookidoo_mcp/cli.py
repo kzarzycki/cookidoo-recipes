@@ -12,7 +12,7 @@ from .http import cookidoo_connector
 
 
 def _default_cookie_path() -> Path:
-    return Path.home() / ".cookidoo-tm7" / "cookies.json"
+    return Path.home() / ".cookidoo-recipes" / "cookies.json"
 
 
 def _cookidoo_base_url(country: str, locale: str) -> str:
@@ -59,7 +59,7 @@ async def _login_and_save(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Cookidoo TM7 helper CLI.")
+    parser = argparse.ArgumentParser(description="Cookidoo helper CLI.")
     sub = parser.add_subparsers(dest="command", required=True)
 
     login_cmd = sub.add_parser("login", help="Log in to Cookidoo and save a persistent local cookie jar.")
@@ -87,7 +87,7 @@ def main(argv: list[str] | None = None) -> int:
                 asyncio.run(_login_and_save(store, email, password, args.country, args.locale))
             except Exception as exc:
                 print(json.dumps({"ok": False, "error": "Cookidoo login failed. Check credentials, 2FA, or region."}))
-                print(f"cookidoo-tm7: {exc.__class__.__name__}", file=sys.stderr)
+                print(f"cookidoo: {exc.__class__.__name__}", file=sys.stderr)
                 return 1
             print(json.dumps({"ok": True, "cookie_file": str(store.path)}))
             return 0

@@ -85,7 +85,7 @@ def test_create_recipe_supports_dry_run():
     result = asyncio.run(client.create_recipe(draft, dry_run=True))
 
     assert result["dry_run"] is True
-    assert result["payload"]["tools"] == ["TM7"]
+    assert "tools" not in result["payload"]
     assert result["payload"]["cookidoo"]["create"] == {"recipeName": "Test"}
 
 
@@ -98,6 +98,7 @@ def test_create_recipe_uses_cookidoo_post_then_patch_fallback():
         servings=2,
         ingredients=["1 egg"],
         steps=[{"text": "Mix 10 sec/speed 3.", "time_seconds": 10, "speed": "3"}],
+        tm_model="TM7",
     )
 
     result = asyncio.run(client.create_recipe(draft, dry_run=False))

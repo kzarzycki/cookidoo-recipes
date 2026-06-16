@@ -2,7 +2,7 @@
 
 ## Goal
 
-Make the Cookidoo TM7 MCP project safe to share as a git repository without exposing local Cookidoo cookies, browser exports, network captures, or live account outputs.
+Make the Cookidoo recipe MCP project safe to share as a git repository without exposing local Cookidoo cookies, browser exports, network captures, or live account outputs.
 
 ## Public Surface
 

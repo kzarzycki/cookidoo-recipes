@@ -10,7 +10,7 @@ class FakeClient:
         return {"authenticated": True, "message": "cookie jar ready"}
 
     async def search(self, query):
-        assert query.tm_model == "TM7"
+        assert query.tm_model is None
         return []
 
     async def get_recipe(self, recipe_id):
@@ -129,8 +129,21 @@ def test_tools_create_defaults_to_dry_run():
     ))
 
     assert result["dry_run"] is True
-    assert result["payload"]["tools"] == ["TM7"]
+    assert "tools" not in result["payload"]
     assert result["confirmation_token"]
+
+
+def test_tools_create_accepts_machine_when_supplied():
+    tools = CookidooTools(FakeClient())
+
+    result = asyncio.run(tools.create_recipe(
+        title="Saved recipe",
+        ingredients=["1 egg"],
+        steps=[{"title": "Mix", "text": "Mix.", "speed": "3"}],
+        tm_model="TM7",
+    ))
+
+    assert result["payload"]["tools"] == ["TM7"]
 
 
 def test_tools_create_accepts_image_key():
@@ -242,3 +255,20 @@ def test_build_tools_uses_real_upstream_mode(tmp_path):
     tools = build_tools(str(cookie_file))
 
     assert tools.client.allow_missing_upstream is False
+
+
+def test_build_tools_accepts_account_localization(tmp_path):
+    from cookidoo_mcp.server import build_tools
+
+    cookie_file = tmp_path / "cookies.json"
+    cookie_file.write_text(
+        '[{"key":"_oauth2_proxy","value":"oauth","domain":"cookidoo.de","path":"/"},'
+        '{"key":"v-authenticated","value":"v","domain":"cookidoo.de","path":"/"}]',
+        encoding="utf-8",
+    )
+    cookie_file.chmod(0o600)
+
+    tools = build_tools(str(cookie_file), default_country="de", default_locale="de-DE")
+
+    assert tools.client.default_country == "de"
+    assert tools.client.default_locale == "de-DE"

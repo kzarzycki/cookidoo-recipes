@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cookidoo-tm7-mcp"
 version = "0.1.0"
-description = "Local MCP server and skill for Cookidoo TM7 recipe search, translation workflows, and custom recipe creation."
+description = "Local MCP server and plugin for Cookidoo recipe search, translation workflows, and custom recipe creation."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 authors = [
   {name = "Krzysztof Zarzycki"},
 ]
-keywords = ["cookidoo", "thermomix", "tm7", "mcp", "recipes"]
+keywords = ["cookidoo", "thermomix", "mcp", "recipes", "translation"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: End Users/Desktop",
@@ -37,6 +37,8 @@ test = [
 ]
 
 [project.scripts]
+cookidoo = "cookidoo_mcp.cli:main"
+cookidoo-mcp = "cookidoo_mcp.server:main"
 cookidoo-tm7 = "cookidoo_mcp.cli:main"
 cookidoo-tm7-mcp = "cookidoo_mcp.server:main"
 

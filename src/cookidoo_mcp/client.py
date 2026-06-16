@@ -19,6 +19,11 @@ CLOUDINARY_UPLOAD_PRESET = "prod-customer-recipe-signed"
 CLOUDINARY_UPLOAD_URL = "https://api-eu.cloudinary.com/v1_1/vorwerk-users-gc/image/upload"
 
 
+def _cookidoo_base_url(country: str, locale: str) -> str:
+    host = "cookidoo.thermomix.com" if country == "us" else f"cookidoo.{country}"
+    return f"https://{host}/foundation/{locale}"
+
+
 class CookidooClientError(RuntimeError):
     pass
 
@@ -38,10 +43,14 @@ class CookidooClient:
         upstream: Any | None = None,
         auth_store: CookieAuthStore | None = None,
         allow_missing_upstream: bool = False,
+        default_country: str = "ch",
+        default_locale: str = "de-CH",
     ) -> None:
         self._upstream = upstream
         self.auth_store = auth_store
         self.allow_missing_upstream = allow_missing_upstream
+        self.default_country = (default_country or "ch").lower()
+        self.default_locale = default_locale or "de-CH"
 
     async def _get_upstream(self) -> Any:
         if self._upstream is not None:
@@ -64,9 +73,9 @@ class CookidooClient:
         session = ClientSession(cookie_jar=CookieJar(unsafe=True), connector=cookidoo_connector())
         cfg = CookidooConfig(
             localization=CookidooLocalizationConfig(
-                country_code="ch",
-                language="de-CH",
-                url="https://cookidoo.ch/foundation/de-CH",
+                country_code=self.default_country,
+                language=self.default_locale,
+                url=_cookidoo_base_url(self.default_country, self.default_locale),
             )
         )
         upstream = Cookidoo(session, cfg)
@@ -91,7 +100,10 @@ class CookidooClient:
             try:
                 raw_results = await upstream.search_recipes(**query.upstream_params())
             except TypeError:
-                raw_results = await upstream.search_recipes(query=query.query, locale=query.language)
+                raw_results = await upstream.search_recipes(
+                    query=query.query,
+                    locale=query.upstream_params()["locale"],
+                )
         except Exception as exc:
             raise _sanitize_error("search", exc) from exc
         hits = raw_results.recipes if hasattr(raw_results, "recipes") else raw_results

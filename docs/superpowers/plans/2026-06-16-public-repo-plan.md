@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Turn the local Cookidoo TM7 MCP project into a shareable git repository without tracking private Cookidoo artifacts.
+**Goal:** Turn the local Cookidoo recipe MCP project into a shareable git repository without tracking private Cookidoo artifacts.
 
 **Architecture:** Keep the Python package and skill unchanged. Add repository metadata, public documentation, CI, and strict ignore rules around cookies and live outputs.
 

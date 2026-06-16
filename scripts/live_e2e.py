@@ -11,7 +11,7 @@ from cookidoo_mcp.server import build_tools
 
 
 def _default_cookie_path() -> str:
-    return str(Path.home() / ".cookidoo-tm7" / "cookies.json")
+    return str(Path.home() / ".cookidoo-recipes" / "cookies.json")
 
 
 def _print(label: str, payload: Any) -> None:
@@ -40,7 +40,7 @@ async def _run_with_tools(args: argparse.Namespace, tools: Any) -> int:
         country=args.country,
         locale=args.locale,
         language=args.language,
-        tm_model="TM7",
+        tm_model=args.tm_model,
         limit=3,
         include_my_recipes=False,
     )
@@ -77,7 +77,7 @@ async def _run_with_tools(args: argparse.Namespace, tools: Any) -> int:
         ],
         notes="Created by Codex live e2e verification.",
         tags=["codex-live-e2e"],
-        tm_model="TM7",
+        tm_model=args.tm_model,
         dry_run=True,
     )
     _print("create_recipe_dry_run", dry_run)
@@ -105,7 +105,7 @@ async def _run_with_tools(args: argparse.Namespace, tools: Any) -> int:
         ],
         notes="Created by Codex live e2e verification.",
         tags=["codex-live-e2e"],
-        tm_model="TM7",
+        tm_model=args.tm_model,
         dry_run=False,
         confirmation_token=dry_run["confirmation_token"],
     )
@@ -119,6 +119,7 @@ def main() -> int:
     parser.add_argument("--country", default="ch")
     parser.add_argument("--locale", default="de-CH")
     parser.add_argument("--language", default="de")
+    parser.add_argument("--tm-model")
     parser.add_argument("--query", default="pasta")
     parser.add_argument("--write", action="store_true", help="Create a real test recipe in Cookidoo.")
     return asyncio.run(run(parser.parse_args()))

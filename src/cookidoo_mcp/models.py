@@ -12,6 +12,13 @@ def _list(value: Any) -> list[str]:
     return [str(item) for item in value if str(item)]
 
 
+def _optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
 def _seconds_to_minutes(value: Any) -> int | None:
     if not isinstance(value, int):
         return None
@@ -30,9 +37,9 @@ class AuthStatus:
 @dataclass
 class SearchQuery:
     query: str = ""
-    country: str = "ch"
-    locale: str = "de-CH"
-    language: str = "de"
+    country: str | None = None
+    locale: str = "en"
+    language: str | None = None
     include_ingredients: list[str] | tuple[str, ...] | None = None
     exclude_ingredients: list[str] | tuple[str, ...] | None = None
     difficulty: str | None = None
@@ -41,16 +48,19 @@ class SearchQuery:
     servings: int | None = None
     min_rating: float | None = None
     tags: list[str] | tuple[str, ...] | None = None
-    tm_model: str = "TM7"
+    tm_model: str | None = None
     page: int = 1
     limit: int = 10
     include_my_recipes: bool = False
 
     def __post_init__(self) -> None:
-        self.country = (self.country or "ch").lower()
-        self.locale = self.locale or "de-CH"
-        self.language = (self.language or self.locale.split("-")[0] or "de").lower()
-        self.tm_model = (self.tm_model or "TM7").upper()
+        country = _optional_text(self.country)
+        language = _optional_text(self.language)
+        tm_model = _optional_text(self.tm_model)
+        self.country = country.lower() if country else None
+        self.locale = _optional_text(self.locale) or "en"
+        self.language = language.lower() if language else None
+        self.tm_model = tm_model.upper() if tm_model else None
         self.include_ingredients = _list(self.include_ingredients)
         self.exclude_ingredients = _list(self.exclude_ingredients)
         self.tags = _list(self.tags)
@@ -58,11 +68,12 @@ class SearchQuery:
         self.limit = min(50, max(1, int(self.limit or 10)))
 
     def upstream_params(self) -> dict[str, Any]:
+        endpoint_locale = self.language or self.locale.split("-")[0].lower()
         return {
             "query": self.query,
-            "locale": self.language,
-            "languages": [self.language],
-            "countries": [self.country],
+            "locale": endpoint_locale,
+            "languages": [self.language] if self.language else None,
+            "countries": [self.country] if self.country else None,
             "ingredients": self.include_ingredients,
             "exclude_ingredients": self.exclude_ingredients,
             "difficulty": self.difficulty,
@@ -71,7 +82,7 @@ class SearchQuery:
             "portions": self.servings,
             "ratings": [str(int(self.min_rating))] if self.min_rating else None,
             "tags": self.tags,
-            "tmv": [self.tm_model],
+            "tmv": [self.tm_model] if self.tm_model else None,
             "page": self.page,
             "page_size": self.limit,
         }
@@ -283,22 +294,23 @@ class RecipeDetail:
 @dataclass
 class RecipeDraft:
     title: str
-    language: str = "de-CH"
+    language: str = "en"
     servings: int | None = None
     ingredients: list[str] = field(default_factory=list)
     steps: list[RecipeStep | dict[str, Any] | str] = field(default_factory=list)
     image: str | None = None
     notes: str = ""
     tags: list[str] = field(default_factory=list)
-    tm_model: str = "TM7"
+    tm_model: str | None = None
 
     def __post_init__(self) -> None:
         self.steps = [RecipeStep.from_any(step) for step in self.steps]
-        self.tm_model = (self.tm_model or "TM7").upper()
+        tm_model = _optional_text(self.tm_model)
+        self.tm_model = tm_model.upper() if tm_model else None
 
     def to_create_payload(self) -> dict[str, Any]:
         patch_payload = self.to_cookidoo_patch_payload()
-        return {
+        payload = {
             "title": self.title,
             "language": self.language,
             "servings": self.servings,
@@ -307,13 +319,15 @@ class RecipeDraft:
             "image": self.image,
             "notes": self.notes,
             "tags": self.tags,
-            "tools": [self.tm_model],
             "source": "generated_adapted",
             "cookidoo": {
                 "create": self.to_cookidoo_create_payload(),
                 "patch": patch_payload,
             },
         }
+        if self.tm_model:
+            payload["tools"] = [self.tm_model]
+        return payload
 
     def to_cookidoo_create_payload(self) -> dict[str, Any]:
         return {"recipeName": self.title}
@@ -322,9 +336,10 @@ class RecipeDraft:
         payload: dict[str, Any] = {
             "ingredients": [{"type": "INGREDIENT", "text": ingredient} for ingredient in self.ingredients],
             "instructions": [step.to_cookidoo_instruction() for step in self.steps],
-            "tools": [self.tm_model],
             "yield": {"value": self.servings or 1, "unitText": "portion"},
         }
+        if self.tm_model:
+            payload["tools"] = [self.tm_model]
         total_time = sum(step.time_seconds or 0 for step in self.steps)
         if total_time:
             payload["prepTime"] = total_time
