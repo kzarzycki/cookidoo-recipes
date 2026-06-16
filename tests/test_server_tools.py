@@ -272,3 +272,31 @@ def test_build_tools_accepts_account_localization(tmp_path):
 
     assert tools.client.default_country == "de"
     assert tools.client.default_locale == "de-DE"
+
+
+def test_build_tools_loads_localization_from_config(tmp_path):
+    from cookidoo_mcp.config import CookidooConfig, CookidooConfigStore
+    from cookidoo_mcp.server import build_tools
+
+    cookie_file = tmp_path / "cookies.json"
+    cookie_file.write_text(
+        '[{"key":"_oauth2_proxy","value":"oauth","domain":"cookidoo.pl","path":"/"},'
+        '{"key":"v-authenticated","value":"v","domain":"cookidoo.pl","path":"/"}]',
+        encoding="utf-8",
+    )
+    cookie_file.chmod(0o600)
+    config_file = tmp_path / "config.yaml"
+    CookidooConfigStore(config_file).save(
+        CookidooConfig(
+            country="pl",
+            locale="pl",
+            label="Poland - Polish",
+            cookie_file=str(cookie_file),
+        )
+    )
+
+    tools = build_tools(config_file=str(config_file))
+
+    assert tools.client.default_country == "pl"
+    assert tools.client.default_locale == "pl"
+    assert tools.client.auth_store.path == cookie_file

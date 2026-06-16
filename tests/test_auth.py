@@ -23,7 +23,7 @@ def test_cookie_import_writes_owner_only_file(tmp_path):
 def test_cookie_store_rejects_world_readable_file(tmp_path):
     path = tmp_path / "cookies.json"
     store = CookieAuthStore(path)
-    store.import_cookie_values("oauth-cookie", "v-cookie")
+    store.import_cookie_values("oauth-cookie", "v-cookie", "cookidoo.test")
     os.chmod(path, 0o644)
 
     with pytest.raises(UnsafeCookieFileError):
@@ -74,3 +74,10 @@ def test_cookie_import_entries_writes_owner_only_file(tmp_path):
     assert oct(path.stat().st_mode & 0o777) == "0o600"
     assert store.status().authenticated is True
     assert {cookie["key"] for cookie in store.load()} == {"_oauth2_proxy", "v-authenticated", "extra"}
+
+
+def test_cookie_payload_import_requires_domain(tmp_path):
+    store = CookieAuthStore(tmp_path / "cookies.json")
+
+    with pytest.raises(ValueError, match="domain"):
+        store.import_cookie_payload({"oauth2_proxy": "oauth-cookie", "v_authenticated": "v-cookie"})

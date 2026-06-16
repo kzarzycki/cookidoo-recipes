@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+
+if [ ! -t 0 ]; then
+  cat >&2 <<EOF
+Interactive login needs a terminal.
+
+Run this command yourself:
+  $ROOT/scripts/cookidoo-login
+EOF
+  exit 2
+fi
+
+if command -v uv >/dev/null 2>&1; then
+  exec uv run --project "$ROOT" --extra cookidoo cookidoo login "$@"
+fi
+
+if [ -x "$ROOT/.venv/bin/python" ]; then
+  PYTHON="$ROOT/.venv/bin/python"
+else
+  PYTHON="python3"
+fi
+
+export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+exec "$PYTHON" -m cookidoo_mcp.cli login "$@"

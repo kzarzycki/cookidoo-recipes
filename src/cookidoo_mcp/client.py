@@ -11,7 +11,6 @@ from .auth import CookieAuthStore
 from .http import cookidoo_connector
 from .models import RecipeDetail, RecipeDraft, RecipeSummary, SearchQuery
 
-ALLOWED_HOST_SUFFIXES = ("cookidoo.ch", "cookidoo.de", "cookidoo.pl", "cookidoo.thermomix.com")
 ALLOWED_IMAGE_HOSTS = ("assets.tmecosys.com", "ugc.assets.tmecosys.com")
 COOKIDOO_IMAGE_TRANSFORMATION = "t_web_rdp_recipe_584x480"
 CLOUDINARY_API_KEY = "993585863591145"
@@ -20,7 +19,12 @@ CLOUDINARY_UPLOAD_URL = "https://api-eu.cloudinary.com/v1_1/vorwerk-users-gc/ima
 
 
 def _cookidoo_base_url(country: str, locale: str) -> str:
-    host = "cookidoo.thermomix.com" if country == "us" else f"cookidoo.{country}"
+    host = {
+        "gb": "cookidoo.co.uk",
+        "tr": "cookidoo.com.tr",
+        "us": "cookidoo.thermomix.com",
+        "vn": "cookidoo.thermomix.vn",
+    }.get(country, f"cookidoo.{country}")
     return f"https://{host}/foundation/{locale}"
 
 
@@ -43,14 +47,16 @@ class CookidooClient:
         upstream: Any | None = None,
         auth_store: CookieAuthStore | None = None,
         allow_missing_upstream: bool = False,
-        default_country: str = "ch",
-        default_locale: str = "de-CH",
+        default_country: str | None = None,
+        default_locale: str | None = None,
+        default_url: str | None = None,
     ) -> None:
         self._upstream = upstream
         self.auth_store = auth_store
         self.allow_missing_upstream = allow_missing_upstream
-        self.default_country = (default_country or "ch").lower()
-        self.default_locale = default_locale or "de-CH"
+        self.default_country = default_country.lower() if default_country else None
+        self.default_locale = default_locale
+        self.default_url = default_url
 
     async def _get_upstream(self) -> Any:
         if self._upstream is not None:
@@ -59,6 +65,8 @@ class CookidooClient:
             raise CookidooClientError("Cookidoo upstream client is not configured")
         if self.auth_store is None:
             raise CookidooClientError("Cookidoo cookie auth store is not configured")
+        if not self.default_country or not self.default_locale:
+            raise CookidooClientError("Cookidoo site is not configured. Run /cookidoo-login.")
         try:
             from aiohttp import ClientSession, CookieJar
             from cookidoo_api import Cookidoo
@@ -75,7 +83,7 @@ class CookidooClient:
             localization=CookidooLocalizationConfig(
                 country_code=self.default_country,
                 language=self.default_locale,
-                url=_cookidoo_base_url(self.default_country, self.default_locale),
+                url=self.default_url or _cookidoo_base_url(self.default_country, self.default_locale),
             )
         )
         upstream = Cookidoo(session, cfg)
@@ -92,7 +100,14 @@ class CookidooClient:
     async def auth_status(self) -> dict[str, Any]:
         if self.auth_store is None:
             return {"authenticated": False, "message": "cookie auth store is not configured"}
-        return self.auth_store.status().to_dict()
+        status = self.auth_store.status().to_dict()
+        if status.get("authenticated") and (not self.default_country or not self.default_locale):
+            return {
+                "authenticated": False,
+                "message": "Cookidoo site is not configured. Run /cookidoo-login.",
+                "cookies_authenticated": True,
+            }
+        return status
 
     async def search(self, query: SearchQuery) -> list[RecipeSummary]:
         upstream = await self._get_upstream()
@@ -127,21 +142,27 @@ class CookidooClient:
             raise _sanitize_error("get recipe", exc) from exc
         return RecipeDetail.from_upstream(payload)
 
-    async def list_my_recipes(self, locale: str = "de-CH") -> list[RecipeSummary]:
+    async def list_my_recipes(self, locale: str | None = None) -> list[RecipeSummary]:
         upstream = await self._get_upstream()
+        selected_locale = locale or self.default_locale
+        if not selected_locale:
+            raise CookidooClientError("Cookidoo site is not configured. Run /cookidoo-login.")
         try:
             if not hasattr(upstream, "list_created_recipes"):
-                payloads = await self._list_created_recipes_via_internal_endpoint(upstream, locale)
+                payloads = await self._list_created_recipes_via_internal_endpoint(upstream, selected_locale)
             else:
-                payloads = await upstream.list_created_recipes(locale)
+                payloads = await upstream.list_created_recipes(selected_locale)
         except Exception as exc:
             raise _sanitize_error("list created recipes", exc) from exc
         return [RecipeSummary.from_upstream(item, "my_recipes") for item in payloads]
 
-    async def get_collection(self, collection_id: str, locale: str = "pl-PL") -> dict[str, Any]:
+    async def get_collection(self, collection_id: str, locale: str | None = None) -> dict[str, Any]:
         upstream = await self._get_upstream()
+        selected_locale = locale or self.default_locale
+        if not selected_locale:
+            raise CookidooClientError("Cookidoo site is not configured. Run /cookidoo-login.")
         try:
-            return await self._get_collection_via_internal_endpoint(upstream, collection_id, locale)
+            return await self._get_collection_via_internal_endpoint(upstream, collection_id, selected_locale)
         except Exception as exc:
             raise _sanitize_error("get collection", exc) from exc
 

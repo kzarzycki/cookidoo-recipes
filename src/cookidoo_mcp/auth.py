@@ -25,7 +25,7 @@ class CookieAuthStore:
         self,
         oauth2_proxy: str,
         v_authenticated: str,
-        domain: str = "cookidoo.ch",
+        domain: str,
     ) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = [
@@ -80,9 +80,9 @@ class CookieAuthStore:
     def import_cookie_payload(self, payload: dict[str, Any]) -> None:
         oauth2_proxy = payload.get("oauth2_proxy") or payload.get("_oauth2_proxy")
         v_authenticated = payload.get("v_authenticated") or payload.get("v-authenticated")
-        domain = payload.get("domain") or "cookidoo.ch"
-        if not oauth2_proxy or not v_authenticated:
-            raise ValueError("Cookie payload must contain oauth2_proxy and v_authenticated")
+        domain = payload.get("domain")
+        if not oauth2_proxy or not v_authenticated or not domain:
+            raise ValueError("Cookie payload must contain oauth2_proxy, v_authenticated, and domain")
         self.import_cookie_values(str(oauth2_proxy), str(v_authenticated), str(domain))
 
     def _write_cookie_payload(self, cookies: list[dict[str, str]]) -> None:

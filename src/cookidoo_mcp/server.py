@@ -9,21 +9,21 @@ import os
 import re
 import secrets
 import sys
-from pathlib import Path
 from typing import Any
 
 from .auth import CookieAuthStore
 from .client import CookidooClient, CookidooClientError
+from .config import CookidooConfigStore, default_config_path, default_cookie_path
 from .models import RecipeDraft, SearchQuery
 
-DISCOVERY_FACETS = (
-    {"country": "ch", "locale": "de-CH", "language": "de"},
-    {"country": "pl", "locale": "pl-PL", "language": "pl"},
-    {"country": "fr", "locale": "fr-FR", "language": "fr"},
+CATALOGUE_DISCOVERY_FACETS = (
     {"country": "de", "locale": "de-DE", "language": "de"},
-    {"country": "it", "locale": "it-IT", "language": "it"},
     {"country": "es", "locale": "es-ES", "language": "es"},
+    {"country": "fr", "locale": "fr-FR", "language": "fr"},
+    {"country": "it", "locale": "it-IT", "language": "it"},
+    {"country": "pl", "locale": "pl-PL", "language": "pl"},
     {"country": "us", "locale": "en-US", "language": "en"},
+    {"country": "ch", "locale": "de-CH", "language": "de"},
 )
 
 TECHNIQUE_QUERY_EXPANSIONS_BY_LANGUAGE = {
@@ -37,7 +37,7 @@ TECHNIQUE_QUERY_EXPANSIONS_BY_LANGUAGE = {
 
 
 def _default_cookie_path() -> str:
-    return str(Path.home() / ".cookidoo-recipes" / "cookies.json")
+    return str(default_cookie_path())
 
 
 class CookidooTools:
@@ -88,7 +88,7 @@ class CookidooTools:
         global_queries = self._discovery_queries(query, related_queries)
         candidates: dict[str, dict[str, Any]] = {}
         try:
-            for facet in DISCOVERY_FACETS:
+            for facet in CATALOGUE_DISCOVERY_FACETS:
                 for query_text in self._facet_queries(facet, global_queries, localized_queries):
                     search_query = SearchQuery(
                         query=query_text,
@@ -117,7 +117,7 @@ class CookidooTools:
         except CookidooClientError as exc:
             return self._error("discover_recipes", exc)
         ranked = self._rank_candidates(candidates, global_queries, localized_queries)[:max_results]
-        return {"results": ranked, "queries": global_queries, "facets": list(DISCOVERY_FACETS)}
+        return {"results": ranked, "queries": global_queries, "facets": list(CATALOGUE_DISCOVERY_FACETS)}
 
     def _discovery_queries(self, query: str, related_queries: list[str] | None) -> list[str]:
         values = [query, *(related_queries or [])]
@@ -218,14 +218,14 @@ class CookidooTools:
             return self._error("get_recipe", exc)
         return detail.to_dict(include_raw=include_raw) if hasattr(detail, "to_dict") else detail
 
-    async def list_my_recipes(self, locale: str = "de-CH") -> dict[str, Any]:
+    async def list_my_recipes(self, locale: str | None = None) -> dict[str, Any]:
         try:
             results = await self.client.list_my_recipes(locale)
         except CookidooClientError as exc:
             return self._error("list_my_recipes", exc)
         return {"results": [item.to_dict() for item in results]}
 
-    async def get_collection(self, collection_id: str, locale: str = "pl-PL") -> dict[str, Any]:
+    async def get_collection(self, collection_id: str, locale: str | None = None) -> dict[str, Any]:
         try:
             return await self.client.get_collection(collection_id, locale)
         except CookidooClientError as exc:
@@ -324,15 +324,24 @@ class CookidooTools:
 
 def build_tools(
     cookie_file: str | None = None,
-    default_country: str = "ch",
-    default_locale: str = "de-CH",
+    default_country: str | None = None,
+    default_locale: str | None = None,
+    default_url: str | None = None,
+    config_file: str | None = None,
 ) -> CookidooTools:
-    auth_store = CookieAuthStore(cookie_file) if cookie_file else None
+    config = CookidooConfigStore(config_file or default_config_path()).load_or_none()
+    if config is not None:
+        cookie_file = cookie_file or config.cookie_file
+        default_country = default_country or config.country
+        default_locale = default_locale or config.locale
+        default_url = default_url or config.url
+    auth_store = CookieAuthStore(cookie_file or str(default_cookie_path()))
     client = CookidooClient(
         auth_store=auth_store,
         allow_missing_upstream=False,
         default_country=default_country,
         default_locale=default_locale,
+        default_url=default_url,
     )
     return CookidooTools(client)
 
@@ -412,11 +421,11 @@ def build_mcp(tools: CookidooTools) -> Any:
         return await tools.get_recipe(recipe_id, include_raw=include_raw)
 
     @mcp.tool()
-    async def cookidoo_list_my_recipes(locale: str = "de-CH") -> dict[str, Any]:
+    async def cookidoo_list_my_recipes(locale: str | None = None) -> dict[str, Any]:
         return await tools.list_my_recipes(locale)
 
     @mcp.tool()
-    async def cookidoo_get_collection(collection_id: str, locale: str = "pl-PL") -> dict[str, Any]:
+    async def cookidoo_get_collection(collection_id: str, locale: str | None = None) -> dict[str, Any]:
         return await tools.get_collection(collection_id, locale=locale)
 
     @mcp.tool()
@@ -467,29 +476,45 @@ def build_mcp(tools: CookidooTools) -> Any:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the Cookidoo MCP server.")
     parser.add_argument(
+        "--config-file",
+        default=os.environ.get("COOKIDOO_CONFIG_FILE", str(default_config_path())),
+        help="Path to the local Cookidoo YAML config.",
+    )
+    parser.add_argument(
         "--cookie-file",
-        default=os.environ.get("COOKIDOO_COOKIE_FILE", _default_cookie_path()),
+        default=os.environ.get("COOKIDOO_COOKIE_FILE"),
         help="Path to the Cookidoo cookie jar JSON file.",
     )
     parser.add_argument(
         "--country",
-        default=os.environ.get("COOKIDOO_COUNTRY", "ch"),
+        default=os.environ.get("COOKIDOO_COUNTRY"),
         help="Cookidoo account country/TLD used for the upstream host.",
     )
     parser.add_argument(
         "--locale",
-        default=os.environ.get("COOKIDOO_LOCALE", "de-CH"),
+        default=os.environ.get("COOKIDOO_LOCALE"),
         help="Cookidoo account locale used for account endpoints.",
+    )
+    parser.add_argument(
+        "--url",
+        default=os.environ.get("COOKIDOO_URL"),
+        help="Cookidoo foundation URL for the selected account site.",
     )
     args = parser.parse_args(argv)
     try:
-        tools = build_tools(args.cookie_file, default_country=args.country, default_locale=args.locale)
+        tools = build_tools(
+            args.cookie_file,
+            default_country=args.country,
+            default_locale=args.locale,
+            default_url=args.url,
+            config_file=args.config_file,
+        )
         mcp = build_mcp(tools)
         mcp.run(show_banner=False)
         return 0
     except KeyboardInterrupt:
         return 130
-    except (CookidooClientError, RuntimeError) as exc:
+    except (CookidooClientError, PermissionError, RuntimeError, ValueError) as exc:
         print(f"cookidoo-mcp: {exc}", file=sys.stderr)
         return 1
 

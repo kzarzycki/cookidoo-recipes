@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cookidoo-tm7-mcp"
+name = "cookidoo-recipes-mcp"
 version = "0.1.0"
 description = "Local MCP server and plugin for Cookidoo recipe search, translation workflows, and custom recipe creation."
 readme = "README.md"
@@ -24,6 +24,7 @@ dependencies = [
   "aiohttp>=3.9",
   "certifi>=2024.0.0",
   "fastmcp>=2.0.0",
+  "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -45,8 +46,6 @@ dev = [
 [project.scripts]
 cookidoo = "cookidoo_mcp.cli:main"
 cookidoo-mcp = "cookidoo_mcp.server:main"
-cookidoo-tm7 = "cookidoo_mcp.cli:main"
-cookidoo-tm7-mcp = "cookidoo_mcp.server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

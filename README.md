@@ -15,61 +15,62 @@ It runs on your machine, uses your own Cookidoo subscription session, and talks 
 - Create custom recipes with dry-run-first write protection.
 - Provide a reusable plugin and skill for search, translate, review, save, and read-back workflows.
 
-## Install
+## Plugin Install
 
 Requires Python 3.12+ and `uv`.
 
-```bash
-uv sync --extra cookidoo --group dev
-```
+This repository is also a local plugin. It includes:
 
-The optional `cookidoo-api` dependency is pinned to commit `d7fd1faf94550d7051676f4a11ca77678d9624ac`.
+- `.codex-plugin/plugin.json`
+- `.claude-plugin/plugin.json`
+- `.mcp.json`
+- `commands/cookidoo-login.md`
+- `skills/cookidoo-recipes/SKILL.md`
+- `scripts/cookidoo-login`
+- `scripts/cookidoo-mcp`
 
-Console scripts:
-
-- `cookidoo`
-- `cookidoo-mcp`
-- `cookidoo-tm7`
-- `cookidoo-tm7-mcp`
-
-## Authentication
-
-No Cookidoo password is stored by this project. Runtime auth uses a local cookie jar.
-
-Interactive login:
+After the plugin is published to a Codex marketplace:
 
 ```bash
-uv run cookidoo login
+codex plugin add cookidoo-recipes@<marketplace>
 ```
 
-The command prompts for your email and password, performs the Cookidoo login, then stores only cookies.
+For Claude, install the same plugin bundle through your Claude Code plugin source. Reload the agent session after installation.
 
-The legacy alias works the same way:
+Verify that the plugin loaded:
 
-```bash
-uv run cookidoo-tm7 login
+- `/cookidoo-login` appears in the slash-command menu.
+- The Cookidoo Recipes skill appears in the available skills list.
+- `cookidoo_auth_status` is available after the MCP server starts.
+
+Then run:
+
+```text
+/cookidoo-login
 ```
 
-Use explicit account settings when your Cookidoo account does not use the default `ch` / `de-CH` login host:
+The command starts a local terminal login wizard. It asks which Cookidoo site you use, lists Cookidoo's current country/region choices, asks for the valid language for that site, then prompts for email and password locally. The password is not stored and should never be pasted into chat.
 
-```bash
-uv run cookidoo login --country de --locale de-DE --cookie-file ~/.cookidoo-recipes/cookies.json
+Login writes:
+
+```text
+~/.cookidoo-recipes/config.yaml
+~/.cookidoo-recipes/cookies.json
 ```
 
-Browser-cookie import:
+`config.yaml` stores non-secret routing data:
 
-```bash
-uv run cookidoo import-cookies --cookie-file ~/.cookidoo-recipes/cookies.json --netscape-file ./cookidoo-cookies.txt
+```yaml
+site:
+  country: <cookidoo-country>
+  locale: <cookidoo-locale>
+  label: <selected-site-label>
+  url: <selected-cookidoo-foundation-url>
+cookies:
+  file: ~/.cookidoo-recipes/cookies.json
 ```
 
-Stdin import for the two required cookies:
-
-```bash
-python3 -c 'import getpass,json; print(json.dumps({"oauth2_proxy": getpass.getpass("_oauth2_proxy: "), "v_authenticated": getpass.getpass("v-authenticated: "), "domain": "cookidoo.ch"}))' \
-  | uv run cookidoo import-cookies --cookie-file ~/.cookidoo-recipes/cookies.json --from-json
-```
-
-Cookie files are written with `0600` permissions. Group-readable or world-readable cookie files are refused.
+Cookie and config files are written with `0600` permissions. Group-readable or world-readable files are refused.
 
 Check auth:
 
@@ -77,56 +78,72 @@ Check auth:
 uv run cookidoo auth-status
 ```
 
-## MCP Server
+If `/cookidoo-login` is not available, the plugin did not load. Raw MCP registration connects recipe tools but does not install the slash command.
 
-Run over stdio:
+## Manual CLI And MCP
 
-```bash
-uv run cookidoo-mcp --cookie-file ~/.cookidoo-recipes/cookies.json
-```
-
-The server uses these account settings for Cookidoo host and account endpoints:
-
-```bash
-uv run cookidoo-mcp \
-  --cookie-file ~/.cookidoo-recipes/cookies.json \
-  --country ch \
-  --locale de-CH
-```
-
-`country` and `locale` are not recipe-result filters unless passed to `cookidoo_search`. The current upstream client still needs them to choose the Cookidoo host and account locale.
-
-MCP registration example:
-
-```bash
-claude mcp add cookidoo -- /absolute/path/to/repo/scripts/cookidoo-mcp --cookie-file /Users/you/.cookidoo-recipes/cookies.json
-```
-
-Use the equivalent MCP registration command for Codex or another MCP client.
-
-## Plugin
-
-This repository is also a local plugin. It includes:
-
-- `.codex-plugin/plugin.json`
-- `.claude-plugin/plugin.json`
-- `.mcp.json`
-- `skills/cookidoo-recipes/SKILL.md`
-- `scripts/cookidoo-mcp`
-
-The plugin MCP wrapper uses `uv` when available, so the plugin can sync and run the project environment from the repository checkout. Prepare the checkout once:
+The plugin wrappers use `uv` when available, so a plugin checkout can sync and run its environment on demand. For development, prepare the checkout explicitly:
 
 ```bash
 uv sync --extra cookidoo --group dev
 ```
 
-The MCP server reads `~/.cookidoo-recipes/cookies.json` by default. Override with environment variables when needed:
+Console scripts:
+
+- `cookidoo`
+- `cookidoo-mcp`
+
+Manual login uses the same wizard:
 
 ```bash
-export COOKIDOO_COOKIE_FILE=/path/to/cookies.json
-export COOKIDOO_COUNTRY=de
-export COOKIDOO_LOCALE=de-DE
+uv run cookidoo login
 ```
+
+Scripted login can pass resolved site settings. It still prompts for the password in a local terminal:
+
+```bash
+uv run cookidoo login --country <country> --locale <locale> --email <email>
+```
+
+Browser-cookie import:
+
+```bash
+uv run cookidoo import-cookies --netscape-file ./cookidoo-cookies.txt --country <country> --locale <locale>
+```
+
+Stdin import for the two required cookies:
+
+```bash
+python3 -c 'import getpass,json; print(json.dumps({"oauth2_proxy": getpass.getpass("_oauth2_proxy: "), "v_authenticated": getpass.getpass("v-authenticated: "), "domain": "cookidoo.<country>"}))' \
+  | uv run cookidoo import-cookies --from-json --country <country> --locale <locale>
+```
+
+Run the MCP server over stdio:
+
+```bash
+uv run cookidoo-mcp
+```
+
+Override local config for scripted clients:
+
+```bash
+uv run cookidoo-mcp \
+  --config-file /path/to/config.yaml \
+  --cookie-file /path/to/cookies.json \
+  --country <country> \
+  --locale <locale> \
+  --url <cookidoo-foundation-url>
+```
+
+`country` and `locale` choose the account host and account endpoints. They are not recipe-result filters unless passed to `cookidoo_search`.
+
+MCP registration example:
+
+```bash
+claude mcp add cookidoo -- /absolute/path/to/repo/scripts/cookidoo-mcp
+```
+
+Use the equivalent MCP registration command for Codex or another MCP client.
 
 ## MCP Tools
 
@@ -168,6 +185,8 @@ uv run pytest -q
 uv run python -m compileall src tests scripts
 uv build
 ```
+
+Build and publish from a clean checkout. `work/`, `outputs/`, `.venv/`, `dist/`, and `*.egg-info/` are local artifacts; do not zip or upload them as part of a plugin release.
 
 The live e2e script uses your local cookie jar and can write to your Cookidoo account only when called with `--write`:
 

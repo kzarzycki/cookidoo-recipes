@@ -58,7 +58,7 @@
 **Files:**
 - Create: `skills/cookidoo-recipes/SKILL.md`
 - Create: `README.md`
-- Create: `outputs/cookidoo-tm7-summary.md`
+- Create: `outputs/cookidoo-recipes-summary.md`
 
 - [ ] Write the skill with triggers, workflow, tool order, Thermomix conventions, and write-confirmation guardrail.
 - [ ] Write installation and verification docs.

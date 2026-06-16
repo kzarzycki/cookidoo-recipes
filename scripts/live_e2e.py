@@ -4,14 +4,10 @@ import argparse
 import asyncio
 import json
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
+from cookidoo_mcp.config import default_config_path
 from cookidoo_mcp.server import build_tools
-
-
-def _default_cookie_path() -> str:
-    return str(Path.home() / ".cookidoo-recipes" / "cookies.json")
 
 
 def _print(label: str, payload: Any) -> None:
@@ -19,7 +15,13 @@ def _print(label: str, payload: Any) -> None:
 
 
 async def run(args: argparse.Namespace) -> int:
-    tools = build_tools(args.cookie_file)
+    tools = build_tools(
+        args.cookie_file,
+        default_country=args.country,
+        default_locale=args.locale,
+        default_url=args.url,
+        config_file=args.config_file,
+    )
     try:
         return await _run_with_tools(args, tools)
     finally:
@@ -35,11 +37,18 @@ async def _run_with_tools(args: argparse.Namespace, tools: Any) -> int:
     if not auth.get("authenticated"):
         return 1
 
+    account_locale = args.locale or tools.client.default_locale
+    country = args.country or tools.client.default_country
+    language = args.language or (account_locale.split("-")[0] if account_locale else None)
+    if not account_locale:
+        _print("configuration", {"error": "Cookidoo locale is not configured. Run /cookidoo-login."})
+        return 1
+
     search = await tools.search(
         query=args.query,
-        country=args.country,
-        locale=args.locale,
-        language=args.language,
+        country=country,
+        locale=account_locale,
+        language=language,
         tm_model=args.tm_model,
         limit=3,
         include_my_recipes=False,
@@ -54,7 +63,7 @@ async def _run_with_tools(args: argparse.Namespace, tools: Any) -> int:
     if detail.get("error") or not detail.get("ingredients"):
         return 1
 
-    mine = await tools.list_my_recipes(args.locale)
+    mine = await tools.list_my_recipes(account_locale)
     _print("list_my_recipes", mine)
     if mine.get("error"):
         return 1
@@ -62,7 +71,7 @@ async def _run_with_tools(args: argparse.Namespace, tools: Any) -> int:
     title = f"Codex Live E2E {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
     dry_run = await tools.create_recipe(
         title=title,
-        language=args.locale,
+        language=account_locale,
         servings=1,
         ingredients=["100 g water"],
         steps=[
@@ -90,7 +99,7 @@ async def _run_with_tools(args: argparse.Namespace, tools: Any) -> int:
 
     written = await tools.create_recipe(
         title=title,
-        language=args.locale,
+        language=account_locale,
         servings=1,
         ingredients=["100 g water"],
         steps=[
@@ -115,10 +124,12 @@ async def _run_with_tools(args: argparse.Namespace, tools: Any) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run live Cookidoo MCP e2e checks.")
-    parser.add_argument("--cookie-file", default=_default_cookie_path())
-    parser.add_argument("--country", default="ch")
-    parser.add_argument("--locale", default="de-CH")
-    parser.add_argument("--language", default="de")
+    parser.add_argument("--config-file", default=str(default_config_path()))
+    parser.add_argument("--cookie-file")
+    parser.add_argument("--country")
+    parser.add_argument("--locale")
+    parser.add_argument("--url")
+    parser.add_argument("--language")
     parser.add_argument("--tm-model")
     parser.add_argument("--query", default="pasta")
     parser.add_argument("--write", action="store_true", help="Create a real test recipe in Cookidoo.")

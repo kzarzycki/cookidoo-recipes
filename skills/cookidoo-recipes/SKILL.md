@@ -77,6 +77,7 @@ Use time, temperature, direction, speed, and mode when the source supports it. I
 
 ## Error Handling
 
+- Missing local config: tell the user to run `/cookidoo-login`.
 - 401 or 403: tell the user the Cookidoo cookies are stale and need refresh.
 - Empty search: try another language or remove filters.
 - Missing nutrition: say the official recipe details did not include that value.
