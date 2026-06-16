@@ -39,10 +39,22 @@ No Cookidoo password is stored by this project. Runtime auth uses a local cookie
 Interactive login:
 
 ```bash
-cookidoo login --email you@example.com --country ch --locale de-CH --cookie-file ~/.cookidoo-recipes/cookies.json
+cookidoo login
 ```
 
-The command prompts for your password, performs the Cookidoo login, then stores only cookies.
+The command prompts for your email and password, performs the Cookidoo login, then stores only cookies.
+
+The legacy alias works the same way:
+
+```bash
+.venv/bin/cookidoo-tm7 login
+```
+
+Use explicit account settings when your Cookidoo account does not use the default `ch` / `de-CH` login host:
+
+```bash
+cookidoo login --country de --locale de-DE --cookie-file ~/.cookidoo-recipes/cookies.json
+```
 
 Browser-cookie import:
 
@@ -62,7 +74,7 @@ Cookie files are written with `0600` permissions. Group-readable or world-readab
 Check auth:
 
 ```bash
-cookidoo auth-status --cookie-file ~/.cookidoo-recipes/cookies.json
+cookidoo auth-status
 ```
 
 ## MCP Server
