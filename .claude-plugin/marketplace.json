@@ -9,7 +9,7 @@
     {
       "name": "cookidoo-recipes",
       "version": "0.1.0",
-      "source": "./",
+      "source": "./plugins/cookidoo-recipes",
       "description": "Search, translate, and save Cookidoo recipes through a local MCP server",
       "author": {
         "name": "Krzysztof Zarzycki"

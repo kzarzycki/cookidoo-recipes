@@ -8,7 +8,7 @@
       "name": "cookidoo-recipes",
       "source": {
         "source": "local",
-        "path": "./"
+        "path": "./plugins/cookidoo-recipes"
       },
       "policy": {
         "installation": "AVAILABLE",

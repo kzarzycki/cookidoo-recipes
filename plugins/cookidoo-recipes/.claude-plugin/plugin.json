@@ -1,0 +1,14 @@
+{
+  "name": "cookidoo-recipes",
+  "version": "0.1.0",
+  "description": "Search Cookidoo recipes, inspect official details, translate recipes, and save custom recipes through a local MCP server.",
+  "author": {
+    "name": "Krzysztof Zarzycki"
+  },
+  "homepage": "https://github.com/kzarzycki/cookidoo-recipes",
+  "repository": "https://github.com/kzarzycki/cookidoo-recipes",
+  "license": "MIT",
+  "keywords": ["cookidoo", "thermomix", "recipes", "mcp", "translation"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
+}

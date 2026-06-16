@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "cookidoo": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/cookidoo-mcp",
+      "args": []
+    }
+  }
+}

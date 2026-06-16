@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cookidoo-recipes-mcp"
+version = "0.1.0"
+description = "Local MCP server and plugin for Cookidoo recipe search, translation workflows, and custom recipe creation."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+authors = [
+  {name = "Krzysztof Zarzycki"},
+]
+keywords = ["cookidoo", "thermomix", "mcp", "recipes", "translation"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: End Users/Desktop",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+  "aiohttp>=3.9",
+  "certifi>=2024.0.0",
+  "fastmcp>=2.0.0",
+  "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+cookidoo = [
+  "cookidoo-api @ git+https://github.com/miaucl/cookidoo-api.git@d7fd1faf94550d7051676f4a11ca77678d9624ac",
+]
+test = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.23",
+]
+
+[dependency-groups]
+dev = [
+  "build>=1.2",
+  "pytest>=8.0",
+  "pytest-asyncio>=0.23",
+]
+
+[project.scripts]
+cookidoo = "cookidoo_mcp.cli:main"
+cookidoo-mcp = "cookidoo_mcp.server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
