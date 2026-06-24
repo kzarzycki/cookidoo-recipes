@@ -37,6 +37,28 @@ class FakeClient:
     async def create_recipe(self, draft, dry_run=True):
         return {"dry_run": dry_run, "payload": draft.to_create_payload()}
 
+    async def get_meal_plan(self, day):
+        return [
+            {
+                "id": day.isoformat(),
+                "title": "Monday",
+                "recipes": [{"id": "r1", "name": "Chicken Chili"}],
+                "customer_recipe_ids": [],
+            }
+        ]
+
+    async def add_recipe_to_plan(self, day, recipe_id, custom=False):
+        return {
+            "id": day.isoformat(),
+            "title": "Monday",
+            "recipes": [],
+            "customer_recipe_ids": [recipe_id] if custom else [],
+            "custom": custom,
+        }
+
+    async def remove_recipe_from_plan(self, day, recipe_id, custom=False):
+        return {"id": day.isoformat(), "title": "Monday", "recipes": [], "customer_recipe_ids": [], "custom": custom}
+
 
 class DiscoveryFakeClient:
     def __init__(self):
@@ -233,6 +255,91 @@ def test_tools_create_allows_write_after_matching_dry_run():
     ))
 
     assert result["dry_run"] is False
+
+
+def test_tools_get_meal_plan_groups_days():
+    tools = CookidooTools(FakeClient())
+
+    result = asyncio.run(tools.get_meal_plan(day="2026-06-22"))
+
+    assert result["days"][0]["id"] == "2026-06-22"
+    assert result["days"][0]["recipes"][0]["id"] == "r1"
+
+
+def test_tools_add_to_plan_defaults_to_dry_run():
+    tools = CookidooTools(FakeClient())
+
+    result = asyncio.run(tools.add_recipe_to_plan(day="2026-06-22", recipe_id="r1"))
+
+    assert result["dry_run"] is True
+    assert result["confirmation_token"]
+
+
+def test_tools_add_to_plan_requires_confirmation_token_for_write():
+    tools = CookidooTools(FakeClient())
+
+    result = asyncio.run(tools.add_recipe_to_plan(day="2026-06-22", recipe_id="r1", dry_run=False))
+
+    assert result["error"]["code"] == "confirmation_required"
+
+
+def test_tools_add_to_plan_rejects_mismatched_token():
+    tools = CookidooTools(FakeClient())
+    dry_run = asyncio.run(tools.add_recipe_to_plan(day="2026-06-22", recipe_id="r1"))
+
+    result = asyncio.run(tools.add_recipe_to_plan(
+        day="2026-06-22",
+        recipe_id="r2",
+        dry_run=False,
+        confirmation_token=dry_run["confirmation_token"],
+    ))
+
+    assert result["error"]["code"] == "confirmation_mismatch"
+
+
+def test_tools_add_to_plan_allows_write_after_matching_dry_run():
+    tools = CookidooTools(FakeClient())
+    dry_run = asyncio.run(tools.add_recipe_to_plan(day="2026-06-22", recipe_id="r1"))
+
+    result = asyncio.run(tools.add_recipe_to_plan(
+        day="2026-06-22",
+        recipe_id="r1",
+        dry_run=False,
+        confirmation_token=dry_run["confirmation_token"],
+    ))
+
+    assert result["id"] == "2026-06-22"
+    assert result["custom"] is False
+
+
+def test_tools_add_to_plan_custom_routes_to_custom_recipe():
+    tools = CookidooTools(FakeClient())
+    dry_run = asyncio.run(tools.add_recipe_to_plan(day="2026-06-22", recipe_id="mine1", custom=True))
+
+    result = asyncio.run(tools.add_recipe_to_plan(
+        day="2026-06-22",
+        recipe_id="mine1",
+        custom=True,
+        dry_run=False,
+        confirmation_token=dry_run["confirmation_token"],
+    ))
+
+    assert result["custom"] is True
+    assert result["customer_recipe_ids"] == ["mine1"]
+
+
+def test_tools_remove_from_plan_allows_write_after_matching_dry_run():
+    tools = CookidooTools(FakeClient())
+    dry_run = asyncio.run(tools.remove_recipe_from_plan(day="2026-06-22", recipe_id="r1"))
+
+    result = asyncio.run(tools.remove_recipe_from_plan(
+        day="2026-06-22",
+        recipe_id="r1",
+        dry_run=False,
+        confirmation_token=dry_run["confirmation_token"],
+    ))
+
+    assert result["id"] == "2026-06-22"
 
 
 def test_default_client_can_be_constructed_without_upstream_import():

@@ -9,6 +9,7 @@ import os
 import re
 import secrets
 import sys
+from datetime import date
 from typing import Any
 
 from .auth import CookieAuthStore
@@ -231,6 +232,91 @@ class CookidooTools:
         except CookidooClientError as exc:
             return self._error("get_collection", exc)
 
+    async def get_meal_plan(self, day: str) -> dict[str, Any]:
+        try:
+            days = await self.client.get_meal_plan(date.fromisoformat(day))
+        except CookidooClientError as exc:
+            return self._error("get_meal_plan", exc)
+        return {"days": days}
+
+    async def add_recipe_to_plan(
+        self,
+        day: str,
+        recipe_id: str,
+        custom: bool = False,
+        dry_run: bool = True,
+        confirmation_token: str | None = None,
+    ) -> dict[str, Any]:
+        payload = {
+            "operation": "add_recipe_to_plan",
+            "day": day,
+            "recipe_id": recipe_id,
+            "custom": custom,
+        }
+        token = self._confirmation_token(payload)
+        if dry_run:
+            self._pending_writes[token] = payload
+            return {"dry_run": True, "payload": payload, "confirmation_token": token}
+        if not confirmation_token or confirmation_token not in self._pending_writes:
+            return {
+                "error": {
+                    "code": "confirmation_required",
+                    "message": "Run a dry run first, review it, then repeat with the returned confirmation_token.",
+                }
+            }
+        if self._pending_writes[confirmation_token] != payload:
+            return {
+                "error": {
+                    "code": "confirmation_mismatch",
+                    "message": "The meal plan change differs from the dry run. Run a new dry run.",
+                }
+            }
+        try:
+            result = await self.client.add_recipe_to_plan(date.fromisoformat(day), recipe_id, custom=custom)
+        except CookidooClientError as exc:
+            return self._error("add_recipe_to_plan", exc)
+        self._pending_writes.pop(confirmation_token, None)
+        return result
+
+    async def remove_recipe_from_plan(
+        self,
+        day: str,
+        recipe_id: str,
+        custom: bool = False,
+        dry_run: bool = True,
+        confirmation_token: str | None = None,
+    ) -> dict[str, Any]:
+        payload = {
+            "operation": "remove_recipe_from_plan",
+            "day": day,
+            "recipe_id": recipe_id,
+            "custom": custom,
+        }
+        token = self._confirmation_token(payload)
+        if dry_run:
+            self._pending_writes[token] = payload
+            return {"dry_run": True, "payload": payload, "confirmation_token": token}
+        if not confirmation_token or confirmation_token not in self._pending_writes:
+            return {
+                "error": {
+                    "code": "confirmation_required",
+                    "message": "Run a dry run first, review it, then repeat with the returned confirmation_token.",
+                }
+            }
+        if self._pending_writes[confirmation_token] != payload:
+            return {
+                "error": {
+                    "code": "confirmation_mismatch",
+                    "message": "The meal plan change differs from the dry run. Run a new dry run.",
+                }
+            }
+        try:
+            result = await self.client.remove_recipe_from_plan(date.fromisoformat(day), recipe_id, custom=custom)
+        except CookidooClientError as exc:
+            return self._error("remove_recipe_from_plan", exc)
+        self._pending_writes.pop(confirmation_token, None)
+        return result
+
     async def upload_recipe_image(
         self,
         source_image_url: str,
@@ -427,6 +513,42 @@ def build_mcp(tools: CookidooTools) -> Any:
     @mcp.tool()
     async def cookidoo_get_collection(collection_id: str, locale: str | None = None) -> dict[str, Any]:
         return await tools.get_collection(collection_id, locale=locale)
+
+    @mcp.tool()
+    async def cookidoo_get_meal_plan(day: str) -> dict[str, Any]:
+        return await tools.get_meal_plan(day)
+
+    @mcp.tool()
+    async def cookidoo_add_recipe_to_plan(
+        day: str,
+        recipe_id: str,
+        custom: bool = False,
+        dry_run: bool = True,
+        confirmation_token: str | None = None,
+    ) -> dict[str, Any]:
+        return await tools.add_recipe_to_plan(
+            day=day,
+            recipe_id=recipe_id,
+            custom=custom,
+            dry_run=dry_run,
+            confirmation_token=confirmation_token,
+        )
+
+    @mcp.tool()
+    async def cookidoo_remove_recipe_from_plan(
+        day: str,
+        recipe_id: str,
+        custom: bool = False,
+        dry_run: bool = True,
+        confirmation_token: str | None = None,
+    ) -> dict[str, Any]:
+        return await tools.remove_recipe_from_plan(
+            day=day,
+            recipe_id=recipe_id,
+            custom=custom,
+            dry_run=dry_run,
+            confirmation_token=confirmation_token,
+        )
 
     @mcp.tool()
     async def cookidoo_upload_recipe_image(

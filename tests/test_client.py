@@ -1,5 +1,7 @@
 import asyncio
+from datetime import date
 
+from cookidoo_api.types import CookidooCalendarDay, CookidooCalendarDayRecipe
 from cookidoo_mcp.client import CookidooClient, CookidooClientError
 from cookidoo_mcp.models import RecipeDraft, SearchQuery
 from yarl import URL
@@ -8,6 +10,7 @@ from yarl import URL
 class FakeUpstream:
     def __init__(self):
         self.created_payloads = []
+        self.calendar_calls = []
 
     async def search_recipes(self, **kwargs):
         return [
@@ -38,6 +41,39 @@ class FakeUpstream:
         if dry_run:
             return {"dry_run": True, "payload": payload}
         return {"id": "created1", "url": "/created/created1", "payload": payload}
+
+    async def get_recipes_in_calendar_week(self, day):
+        self.calendar_calls.append(("get", day))
+        return [
+            CookidooCalendarDay(
+                id=day.isoformat(),
+                title="Monday",
+                recipes=[
+                    CookidooCalendarDayRecipe(
+                        id="r1", name="Chicken Chili", total_time="30", thumbnail="", image="", url="/recipes/r1"
+                    )
+                ],
+                customer_recipe_ids=[],
+            )
+        ]
+
+    async def add_recipes_to_calendar(self, day, recipe_ids):
+        self.calendar_calls.append(("add", day, recipe_ids))
+        return CookidooCalendarDay(id=day.isoformat(), title="Monday", recipes=[], customer_recipe_ids=[])
+
+    async def remove_recipe_from_calendar(self, day, recipe_id):
+        self.calendar_calls.append(("remove", day, recipe_id))
+        return CookidooCalendarDay(id=day.isoformat(), title="Monday", recipes=[], customer_recipe_ids=[])
+
+    async def add_custom_recipes_to_calendar(self, day, recipe_ids):
+        self.calendar_calls.append(("add_custom", day, recipe_ids))
+        return CookidooCalendarDay(
+            id=day.isoformat(), title="Monday", recipes=[], customer_recipe_ids=list(recipe_ids)
+        )
+
+    async def remove_custom_recipe_from_calendar(self, day, recipe_id):
+        self.calendar_calls.append(("remove_custom", day, recipe_id))
+        return CookidooCalendarDay(id=day.isoformat(), title="Monday", recipes=[], customer_recipe_ids=[])
 
 
 class FailingUpstream:
@@ -117,6 +153,37 @@ def test_create_recipe_uses_cookidoo_post_then_patch_fallback():
     )
     assert upstream.calls[1][3]["ingredients"] == [{"type": "INGREDIENT", "text": "1 egg"}]
     assert upstream.calls[1][3]["tools"] == ["TM7"]
+
+
+def test_get_meal_plan_returns_days_with_recipes():
+    client = CookidooClient(upstream=FakeUpstream())
+
+    days = asyncio.run(client.get_meal_plan(date(2026, 6, 22)))
+
+    assert days[0]["id"] == "2026-06-22"
+    assert days[0]["recipes"][0]["id"] == "r1"
+
+
+def test_add_recipe_to_plan_routes_standard_vs_custom():
+    upstream = FakeUpstream()
+    client = CookidooClient(upstream=upstream)
+
+    asyncio.run(client.add_recipe_to_plan(date(2026, 6, 22), "r1"))
+    asyncio.run(client.add_recipe_to_plan(date(2026, 6, 22), "mine1", custom=True))
+
+    assert ("add", date(2026, 6, 22), ["r1"]) in upstream.calendar_calls
+    assert ("add_custom", date(2026, 6, 22), ["mine1"]) in upstream.calendar_calls
+
+
+def test_remove_recipe_from_plan_routes_standard_vs_custom():
+    upstream = FakeUpstream()
+    client = CookidooClient(upstream=upstream)
+
+    asyncio.run(client.remove_recipe_from_plan(date(2026, 6, 22), "r1"))
+    asyncio.run(client.remove_recipe_from_plan(date(2026, 6, 22), "mine1", custom=True))
+
+    assert ("remove", date(2026, 6, 22), "r1") in upstream.calendar_calls
+    assert ("remove_custom", date(2026, 6, 22), "mine1") in upstream.calendar_calls
 
 
 def test_sanitizes_upstream_errors():
