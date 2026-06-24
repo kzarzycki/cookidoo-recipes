@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import dataclasses
+from datetime import date
 from http import HTTPStatus
 import json
 import sys
@@ -53,6 +55,12 @@ def _sanitize_error(operation: str, exc: Exception) -> CookidooClientError:
         err.relogin_needed = True
         return err
     return CookidooClientError(f"{operation} failed: Cookidoo request failed. Check filters or refresh cookies.")
+
+
+def _calendar_day_to_dict(day: Any) -> dict[str, Any]:
+    if dataclasses.is_dataclass(day) and not isinstance(day, type):
+        return dataclasses.asdict(day)
+    return day
 
 
 class CookidooClient:
@@ -179,6 +187,36 @@ class CookidooClient:
             return await self._get_collection_via_internal_endpoint(upstream, collection_id, selected_locale)
         except Exception as exc:
             raise _sanitize_error("get collection", exc) from exc
+
+    async def get_meal_plan(self, day: date) -> list[dict[str, Any]]:
+        upstream = await self._get_upstream()
+        try:
+            days = await upstream.get_recipes_in_calendar_week(day)
+        except Exception as exc:
+            raise _sanitize_error("get meal plan", exc) from exc
+        return [_calendar_day_to_dict(item) for item in days]
+
+    async def add_recipe_to_plan(self, day: date, recipe_id: str, custom: bool = False) -> dict[str, Any]:
+        upstream = await self._get_upstream()
+        try:
+            if custom:
+                result = await upstream.add_custom_recipes_to_calendar(day, [recipe_id])
+            else:
+                result = await upstream.add_recipes_to_calendar(day, [recipe_id])
+        except Exception as exc:
+            raise _sanitize_error("add recipe to plan", exc) from exc
+        return _calendar_day_to_dict(result)
+
+    async def remove_recipe_from_plan(self, day: date, recipe_id: str, custom: bool = False) -> dict[str, Any]:
+        upstream = await self._get_upstream()
+        try:
+            if custom:
+                result = await upstream.remove_custom_recipe_from_calendar(day, recipe_id)
+            else:
+                result = await upstream.remove_recipe_from_calendar(day, recipe_id)
+        except Exception as exc:
+            raise _sanitize_error("remove recipe from plan", exc) from exc
+        return _calendar_day_to_dict(result)
 
     async def create_recipe(self, draft: RecipeDraft, dry_run: bool = True) -> dict[str, Any]:
         upstream = await self._get_upstream()
