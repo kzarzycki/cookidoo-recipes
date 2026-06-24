@@ -47,7 +47,8 @@ class CookidooTools:
         self._pending_writes: dict[str, dict[str, Any]] = {}
 
     def _error(self, operation: str, exc: Exception) -> dict[str, Any]:
-        return {
+        relogin = bool(getattr(exc, "relogin_needed", False))
+        envelope: dict[str, Any] = {
             "error": {
                 "code": "cookidoo_error",
                 "operation": operation,
@@ -55,6 +56,15 @@ class CookidooTools:
                 "action": "Refresh Cookidoo cookies or retry with narrower inputs.",
             }
         }
+        if relogin:
+            # Mirror the browser harness reuse_session signal so the agent
+            # re-seeds the session instead of retrying.
+            envelope["reLoginNeeded"] = True
+            envelope["error"]["action"] = (
+                "Cookidoo session expired. Re-seed: run `cookidoo login` locally, "
+                "then push the jar with deploy/seed-session.sh."
+            )
+        return envelope
 
     def _confirmation_token(self, payload: dict[str, Any]) -> str:
         canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
@@ -65,7 +75,10 @@ class CookidooTools:
         ).hexdigest()
 
     async def auth_status(self) -> dict[str, Any]:
-        return await self.client.auth_status()
+        status = await self.client.auth_status()
+        if not status.get("authenticated"):
+            status["reLoginNeeded"] = True
+        return status
 
     async def search(self, **kwargs: Any) -> dict[str, Any]:
         query = SearchQuery(**kwargs)
@@ -510,7 +523,19 @@ def main(argv: list[str] | None = None) -> int:
             config_file=args.config_file,
         )
         mcp = build_mcp(tools)
-        mcp.run(show_banner=False)
+        transport = os.environ.get("COOKIDOO_MCP_TRANSPORT")
+        if transport:
+            # Remote/container mode: serve Streamable HTTP. Defaults to stdio
+            # when unset so local CLI use is unchanged.
+            mcp.run(
+                transport=transport,
+                host=os.environ.get("COOKIDOO_MCP_HOST", "0.0.0.0"),
+                port=int(os.environ.get("COOKIDOO_MCP_PORT", "8080")),
+                path=os.environ.get("COOKIDOO_MCP_PATH", "/mcp"),
+                show_banner=False,
+            )
+        else:
+            mcp.run(show_banner=False)
         return 0
     except KeyboardInterrupt:
         return 130

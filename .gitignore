@@ -37,3 +37,8 @@ work/
 outputs/
 *.network-request
 *.network-response
+
+# Remote deploy secrets (Cloudflare token, tfvars, any local session exports)
+.secrets/
+deploy/terraform/terraform.tfvars
+deploy/.dev.vars

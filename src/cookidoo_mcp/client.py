@@ -29,15 +29,29 @@ def _cookidoo_base_url(country: str, locale: str) -> str:
 
 
 class CookidooClientError(RuntimeError):
-    pass
+    # Set True when the failure is an expired/missing session (login redirect,
+    # 401/403). The MCP tool layer surfaces this as reLoginNeeded so the agent
+    # knows to re-seed the cookie jar rather than retry.
+    relogin_needed: bool = False
 
 
 def _sanitize_error(operation: str, exc: Exception) -> CookidooClientError:
     name = exc.__class__.__name__.lower()
-    if "auth" in name or "unauthor" in str(exc).lower() or "forbidden" in str(exc).lower():
-        return CookidooClientError(
+    text = str(exc).lower()
+    if (
+        "auth" in name
+        or "unauthor" in text
+        or "forbidden" in text
+        or "401" in text
+        or "403" in text
+        or "redirect" in text
+        or "login" in text
+    ):
+        err = CookidooClientError(
             f"{operation} failed: Cookidoo authentication is missing or stale. Refresh the cookie jar."
         )
+        err.relogin_needed = True
+        return err
     return CookidooClientError(f"{operation} failed: Cookidoo request failed. Check filters or refresh cookies.")
 
 
