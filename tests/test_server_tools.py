@@ -342,6 +342,33 @@ def test_tools_remove_from_plan_allows_write_after_matching_dry_run():
     assert result["id"] == "2026-06-22"
 
 
+def test_tools_get_meal_plan_returns_error_for_malformed_day():
+    tools = CookidooTools(FakeClient())
+
+    result = asyncio.run(tools.get_meal_plan(day="2026-13-99"))
+
+    assert result["error"]["operation"] == "get_meal_plan"
+    assert "invalid date" in result["error"]["message"]
+
+
+def test_tools_add_to_plan_returns_error_for_malformed_day():
+    tools = CookidooTools(FakeClient())
+
+    result = asyncio.run(tools.add_recipe_to_plan(day="junk", recipe_id="r1"))
+
+    assert result["error"]["operation"] == "add_recipe_to_plan"
+    assert "invalid date" in result["error"]["message"]
+
+
+def test_tools_remove_from_plan_returns_error_for_malformed_day():
+    tools = CookidooTools(FakeClient())
+
+    result = asyncio.run(tools.remove_recipe_from_plan(day="junk", recipe_id="r1"))
+
+    assert result["error"]["operation"] == "remove_recipe_from_plan"
+    assert "invalid date" in result["error"]["message"]
+
+
 def test_default_client_can_be_constructed_without_upstream_import():
     client = CookidooClient(upstream=None, allow_missing_upstream=True)
 

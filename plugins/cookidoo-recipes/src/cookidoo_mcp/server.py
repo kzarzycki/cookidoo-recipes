@@ -41,6 +41,13 @@ def _default_cookie_path() -> str:
     return str(default_cookie_path())
 
 
+def _parse_day(day: str) -> date:
+    try:
+        return date.fromisoformat(day)
+    except ValueError as exc:
+        raise CookidooClientError(f"invalid date '{day}': expected ISO format YYYY-MM-DD") from exc
+
+
 class CookidooTools:
     def __init__(self, client: Any) -> None:
         self.client = client
@@ -234,7 +241,7 @@ class CookidooTools:
 
     async def get_meal_plan(self, day: str) -> dict[str, Any]:
         try:
-            days = await self.client.get_meal_plan(date.fromisoformat(day))
+            days = await self.client.get_meal_plan(_parse_day(day))
         except CookidooClientError as exc:
             return self._error("get_meal_plan", exc)
         return {"days": days}
@@ -247,6 +254,10 @@ class CookidooTools:
         dry_run: bool = True,
         confirmation_token: str | None = None,
     ) -> dict[str, Any]:
+        try:
+            parsed_day = _parse_day(day)
+        except CookidooClientError as exc:
+            return self._error("add_recipe_to_plan", exc)
         payload = {
             "operation": "add_recipe_to_plan",
             "day": day,
@@ -272,7 +283,7 @@ class CookidooTools:
                 }
             }
         try:
-            result = await self.client.add_recipe_to_plan(date.fromisoformat(day), recipe_id, custom=custom)
+            result = await self.client.add_recipe_to_plan(parsed_day, recipe_id, custom=custom)
         except CookidooClientError as exc:
             return self._error("add_recipe_to_plan", exc)
         self._pending_writes.pop(confirmation_token, None)
@@ -286,6 +297,10 @@ class CookidooTools:
         dry_run: bool = True,
         confirmation_token: str | None = None,
     ) -> dict[str, Any]:
+        try:
+            parsed_day = _parse_day(day)
+        except CookidooClientError as exc:
+            return self._error("remove_recipe_from_plan", exc)
         payload = {
             "operation": "remove_recipe_from_plan",
             "day": day,
@@ -311,7 +326,7 @@ class CookidooTools:
                 }
             }
         try:
-            result = await self.client.remove_recipe_from_plan(date.fromisoformat(day), recipe_id, custom=custom)
+            result = await self.client.remove_recipe_from_plan(parsed_day, recipe_id, custom=custom)
         except CookidooClientError as exc:
             return self._error("remove_recipe_from_plan", exc)
         self._pending_writes.pop(confirmation_token, None)
