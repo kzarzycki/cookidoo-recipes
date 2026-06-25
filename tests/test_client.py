@@ -113,6 +113,43 @@ def test_get_recipe_normalizes_nutrition_source():
     assert detail.nutrition_source == "official"
 
 
+class CustomRecipeUpstream:
+    """Records which recipe endpoint was hit; public endpoint 404s on ULIDs."""
+
+    def __init__(self):
+        self.calls = []
+
+    async def get_recipe_details(self, recipe_id):
+        self.calls.append(("public", recipe_id))
+        raise RuntimeError("Cookidoo request failed (404) for custom recipe")
+
+    async def get_custom_recipe(self, recipe_id):
+        self.calls.append(("custom", recipe_id))
+        return {"id": recipe_id, "name": "My Custom Dish", "ingredients": ["a"], "instructions": ["mix"]}
+
+
+def test_get_recipe_routes_ulid_to_custom_endpoint():
+    upstream = CustomRecipeUpstream()
+    client = CookidooClient(upstream=upstream)
+
+    detail = asyncio.run(client.get_recipe("01K2ABCDEFGHJKMNPQRSTVWXYZ"))
+
+    assert detail.title == "My Custom Dish"
+    # ULID id must hit the custom endpoint first, never falling to the public 404.
+    assert upstream.calls == [("custom", "01K2ABCDEFGHJKMNPQRSTVWXYZ")]
+
+
+def test_get_recipe_public_id_falls_back_to_custom():
+    upstream = CustomRecipeUpstream()
+    client = CookidooClient(upstream=upstream)
+
+    detail = asyncio.run(client.get_recipe("r123456"))
+
+    # Non-ULID tries public first (raises), then falls back to custom.
+    assert detail.title == "My Custom Dish"
+    assert [c[0] for c in upstream.calls] == ["public", "custom"]
+
+
 def test_create_recipe_supports_dry_run():
     upstream = FakeUpstream()
     client = CookidooClient(upstream=upstream)
