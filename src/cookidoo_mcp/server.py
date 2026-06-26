@@ -435,6 +435,46 @@ class CookidooTools:
         self._pending_writes.pop(confirmation_token, None)
         return result
 
+    async def list_created_recipes(self, locale: str | None = None) -> dict[str, Any]:
+        try:
+            results = await self.client.list_my_recipes(locale)
+        except CookidooClientError as exc:
+            return self._error("list_created_recipes", exc)
+        return {"results": [item.to_dict() for item in results]}
+
+    async def delete_recipe(
+        self,
+        recipe_id: str,
+        locale: str | None = None,
+        dry_run: bool = True,
+        confirmation_token: str | None = None,
+    ) -> dict[str, Any]:
+        payload = {"operation": "delete_recipe", "recipe_id": recipe_id, "locale": locale}
+        token = self._confirmation_token(payload)
+        if dry_run:
+            self._pending_writes[token] = payload
+            return {"dry_run": True, "payload": payload, "confirmation_token": token}
+        if not confirmation_token or confirmation_token not in self._pending_writes:
+            return {
+                "error": {
+                    "code": "confirmation_required",
+                    "message": "Run a dry run first, review it, then repeat with the returned confirmation_token.",
+                }
+            }
+        if self._pending_writes[confirmation_token] != payload:
+            return {
+                "error": {
+                    "code": "confirmation_mismatch",
+                    "message": "The delete request differs from the dry run. Run a new dry run.",
+                }
+            }
+        try:
+            result = await self.client.delete_recipe(recipe_id, locale=locale)
+        except CookidooClientError as exc:
+            return self._error("delete_recipe", exc)
+        self._pending_writes.pop(confirmation_token, None)
+        return result
+
 
 def build_tools(
     cookie_file: str | None = None,
@@ -537,6 +577,28 @@ def build_mcp(tools: CookidooTools) -> Any:
     @mcp.tool()
     async def cookidoo_list_my_recipes(locale: str | None = None) -> dict[str, Any]:
         return await tools.list_my_recipes(locale)
+
+    @mcp.tool()
+    async def cookidoo_list_created_recipes(locale: str | None = None) -> dict[str, Any]:
+        """List the user's created/custom recipes (id + title) so they are
+        discoverable and deletable. Queries the created-recipes collection."""
+        return await tools.list_created_recipes(locale)
+
+    @mcp.tool()
+    async def cookidoo_delete_recipe(
+        recipe_id: str,
+        locale: str | None = None,
+        dry_run: bool = True,
+        confirmation_token: str | None = None,
+    ) -> dict[str, Any]:
+        """Delete a created/custom recipe by id. Two-step: dry run returns a
+        confirmation_token, then repeat with it to commit the deletion."""
+        return await tools.delete_recipe(
+            recipe_id=recipe_id,
+            locale=locale,
+            dry_run=dry_run,
+            confirmation_token=confirmation_token,
+        )
 
     @mcp.tool()
     async def cookidoo_get_collection(collection_id: str, locale: str | None = None) -> dict[str, Any]:

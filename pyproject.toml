@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cookidoo-recipes-mcp"
-version = "0.3.0"
+version = "0.4.0"
 description = "Local MCP server and plugin for Cookidoo recipe search, translation workflows, and custom recipe creation."
 readme = "README.md"
 license = "MIT"

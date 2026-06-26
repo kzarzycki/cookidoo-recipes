@@ -37,6 +37,9 @@ class FakeClient:
     async def create_recipe(self, draft, dry_run=True):
         return {"dry_run": dry_run, "payload": draft.to_create_payload()}
 
+    async def delete_recipe(self, recipe_id, locale=None):
+        return {"id": recipe_id, "deleted": True, "locale": locale}
+
     async def get_meal_plan(self, day):
         return [
             {
@@ -434,3 +437,43 @@ def test_build_tools_loads_localization_from_config(tmp_path):
     assert tools.client.default_country == "pl"
     assert tools.client.default_locale == "pl"
     assert tools.client.auth_store.path == cookie_file
+
+
+def test_tools_list_created_recipes_wraps_results():
+    tools = CookidooTools(FakeClient())
+
+    assert asyncio.run(tools.list_created_recipes(locale="de-CH")) == {"results": []}
+
+
+def test_tools_delete_recipe_defaults_to_dry_run():
+    tools = CookidooTools(FakeClient())
+
+    result = asyncio.run(tools.delete_recipe(recipe_id="01ABC", locale="de-CH"))
+
+    assert result["dry_run"] is True
+    assert result["confirmation_token"]
+
+
+def test_tools_delete_recipe_requires_confirmation_token_for_write():
+    tools = CookidooTools(FakeClient())
+
+    result = asyncio.run(tools.delete_recipe(recipe_id="01ABC", dry_run=False))
+
+    assert result["error"]["code"] == "confirmation_required"
+
+
+def test_tools_delete_recipe_allows_write_after_matching_dry_run():
+    tools = CookidooTools(FakeClient())
+
+    dry_run = asyncio.run(tools.delete_recipe(recipe_id="01ABC", locale="de-CH"))
+    result = asyncio.run(
+        tools.delete_recipe(
+            recipe_id="01ABC",
+            locale="de-CH",
+            dry_run=False,
+            confirmation_token=dry_run["confirmation_token"],
+        )
+    )
+
+    assert result["deleted"] is True
+    assert result["id"] == "01ABC"

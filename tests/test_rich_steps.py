@@ -5,7 +5,7 @@ Proves: a structured TTS step, a Varoma/STEAMING MODE step, and a not-doable
 program step each serialize to the correct PATCH instruction.
 """
 
-from cookidoo_mcp.models import RecipeStep
+from cookidoo_mcp.models import RecipeStep, TURBO_DEFAULT_PULSE_COUNT
 
 
 def test_structured_tts_anchors_regardless_of_prose():
@@ -58,31 +58,66 @@ def test_steaming_varoma_mode():
     instr = step.to_cookidoo_instruction()
     ann = instr["annotations"][0]
     assert ann["type"] == "MODE"
-    assert ann["name"] == "STEAMING"
+    # MODE name is the lowercase wire literal the created-recipe API persists.
+    assert ann["name"] == "steaming"
     assert ann["data"]["accessory"] == "Varoma"
     assert ann["data"]["time"] == 900
+    # STEAMING requires a direction; forward defaults to the "CW" literal.
+    assert ann["data"]["direction"] == "CW"
+    # STEAMING rejects temperature -> it is never emitted, even if requested.
+    assert "temperature" not in ann["data"]
+
+
+def test_steaming_reverse_direction_is_ccw():
+    """A reverse/Linkslauf steaming step emits the case-sensitive "CCW" literal."""
+    step = RecipeStep(text="Steam.", mode="STEAMING", time_seconds=600, reverse=True)
+    ann = step.to_cookidoo_instruction()["annotations"][0]
+    assert ann["data"]["direction"] == "CCW"
 
 
 def test_browning_mode_with_tm7_power():
+    """BROWNING uses its own temp enum (140..160) and a power enum (Gentle/Intense).
+
+    Live-verified: a manual-range temp (120) is below the browning range and is
+    dropped (prose), and a numeric power ("high"/"5") would silently strip the whole
+    annotation, so it is coerced to a valid level.
+    """
     step = RecipeStep(
         text="Brown the meat.",
         mode="BROWNING",
         time_seconds=300,
-        temperature_c=120,
+        temperature_c=160,
         power="high",
         tm_model="TM7",
     )
     ann = step.to_cookidoo_instruction()["annotations"][0]
-    assert ann["type"] == "MODE" and ann["name"] == "BROWNING"
-    assert ann["data"]["temperature"] == {"value": "120", "unit": "C"}
-    assert ann["data"]["power"] == "high"
+    assert ann["type"] == "MODE" and ann["name"] == "browning"
+    assert ann["data"]["temperature"] == {"value": "160", "unit": "C"}
+    assert ann["data"]["power"] in ("Gentle", "Intense")
 
 
-def test_tm7_only_params_gated_on_tm6():
-    """pulseCount/power are TM7-only; on TM6 they must not be emitted."""
+def test_turbo_pulse_count_required():
+    """TURBO requires pulseCount on the wire (omitting it 400-rejects the PATCH),
+    so it is always emitted, defaulted when unset."""
     step = RecipeStep(text="Pulse.", mode="TURBO", time_seconds=2, pulse_count=3, tm_model="TM6")
     ann = step.to_cookidoo_instruction()["annotations"][0]
-    assert "pulseCount" not in ann["data"]
+    assert ann["data"]["pulseCount"] == 3
+    step2 = RecipeStep(text="Pulse.", mode="TURBO", time_seconds=2)
+    ann2 = step2.to_cookidoo_instruction()["annotations"][0]
+    assert ann2["data"]["pulseCount"] == TURBO_DEFAULT_PULSE_COUNT
+
+
+def test_turbo_time_out_of_enum_falls_back_to_tts():
+    """TURBO time is the enum {1,2}; time:3 (or absent) would 400/strip on save,
+    so an out-of-range turbo falls back to a surviving encoding, never a MODE."""
+    step = RecipeStep(text="Pulse.", mode="TURBO", time_seconds=3, speed="5")
+    ann = step.to_cookidoo_instruction()["annotations"][0]
+    assert ann["type"] != "MODE"  # not a silently-stripped turbo MODE
+    step2 = RecipeStep(text="Pulse.", mode="TURBO")  # no time
+    instr2 = step2.to_cookidoo_instruction()
+    assert all(a["type"] != "MODE" for a in instr2["annotations"])
+    step3 = RecipeStep(text="Pulse.", mode="TURBO", time_seconds=1)  # in enum
+    assert step3.to_cookidoo_instruction()["annotations"][0]["type"] == "MODE"
 
 
 def test_not_doable_program_is_plain_text():

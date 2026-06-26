@@ -248,6 +248,35 @@ class CookidooClient:
         except Exception as exc:
             raise _sanitize_error("create recipe", exc) from exc
 
+    async def delete_recipe(self, recipe_id: str, locale: str | None = None) -> dict[str, Any]:
+        """Delete a created/custom recipe by id.
+
+        Created recipes live at ``created-recipes/{locale}/{id}``; a DELETE on that
+        same path removes them (matches cookidoo-api's remove_custom_recipe).
+        """
+        upstream = await self._get_upstream()
+        selected_locale = locale or self.default_locale
+        if not selected_locale:
+            raise CookidooClientError("Cookidoo site is not configured. Run /cookidoo-login.")
+        try:
+            if hasattr(upstream, "remove_custom_recipe"):
+                await upstream.remove_custom_recipe(recipe_id)
+            else:
+                await self._delete_created_recipe_via_internal_endpoint(upstream, recipe_id, selected_locale)
+        except Exception as exc:
+            raise _sanitize_error("delete recipe", exc) from exc
+        return {"id": str(recipe_id), "deleted": True, "locale": selected_locale}
+
+    async def _delete_created_recipe_via_internal_endpoint(self, upstream: Any, recipe_id: str, locale: str) -> None:
+        if not hasattr(upstream, "_request_json") or not hasattr(upstream, "api_endpoint"):
+            raise CookidooClientError("Cookidoo upstream does not support created recipe deletion")
+        await upstream._request_json(
+            "delete",
+            upstream.api_endpoint / "created-recipes" / locale / str(recipe_id),
+            "delete recipe",
+            parse_response=False,
+        )
+
     async def upload_recipe_image(self, source_image_url: str, locale: str = "en") -> dict[str, Any]:
         upstream = await self._get_upstream()
         if not hasattr(upstream, "_session") or not hasattr(upstream, "_request_json") or not hasattr(upstream, "api_endpoint"):
