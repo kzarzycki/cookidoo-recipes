@@ -606,6 +606,46 @@ def build_mcp(tools: CookidooTools) -> Any:
         dry_run: bool = True,
         confirmation_token: str | None = None,
     ) -> dict[str, Any]:
+        """Create a custom Cookidoo recipe with rich Thermomix machine settings.
+
+        Each entry in `steps` may be a plain string (prose only) OR a dict with
+        structured machine-setting fields. Populate the structured fields so the
+        recipe is saved as guided steps, not flat text. Mirror the original
+        recipe's settings exactly.
+
+        Step dict fields:
+          text (str, required)  instruction prose.
+          time_seconds (int)    duration of the setting, 1..5940 (mode max varies).
+          temperature_c (int)   manual heat in Celsius. Allowed: OFF or one of
+                                37,40,45,50,55,60,65,70,75,80,85,90,95,98,100,
+                                105,110,115,120. Other values snap to the nearest;
+                                values outside the range stay in prose (no setting).
+          temperature_f (int)   Celsius alternative in Fahrenheit (own enum).
+          speed (str)           "soft" (Spoon/soft-stir) or 0.5..5 for manual TTS;
+                                6..8 only inside mode="BLEND".
+          reverse (bool)        true = counter-clockwise (Linkslauf) blade.
+          mode (str)            one of DOUGH, BLEND, TURBO, WARM_UP, RICE_COOKER,
+                                STEAMING, BROWNING. Emits a MODE annotation. Use for
+                                kneading, high-speed blend (6-8), turbo pulses,
+                                pre-heat, rice cooker, Varoma steaming, sauté/brown.
+          accessory (str)       only "Varoma" (with mode=STEAMING) is structured;
+                                any other accessory (butterfly whisk, simmering
+                                basket, spatula, measuring cup, blade cover, peeler)
+                                must be written into `text` instead.
+          pulse_count (int)     TURBO pulses (TM7 only).
+          power (str)           BROWNING power level (TM7 only).
+          anchor (str)          substring of `text` the setting attaches to. If
+                                omitted, the canonical marker (e.g. "5 min/100C/
+                                speed 1") is appended to text and anchored there.
+          annotations (list)    pre-built annotation dicts (advanced; bypasses the
+                                structured builder).
+
+        NOT structured by the API (write into `text`, no fields): named TM
+        programs (Sous-vide, Slow Cook, Fermentation, Egg boiler, Sugar/
+        Caramelize, High-Temperature) and exact non-enum temperatures
+        (e.g. 63 C sous-vide). Render them explicitly, e.g.
+        "Sous-vide 63 C / 45 min (set program manually)".
+        """
         return await tools.create_recipe(
             title=title,
             ingredients=ingredients,

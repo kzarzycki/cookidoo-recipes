@@ -73,7 +73,67 @@ Never write to the user's Cookidoo account without an explicit confirmation in t
 - Varoma: steaming.
 - Dairy: add near the end and keep at or below 90 C unless the source says otherwise.
 
-Use time, temperature, direction, speed, and mode when the source supports it. If adapting from a recipe that was not written for the requested machine, say the saved method is generated/adapted content.
+Use time, temperature, direction, speed, and mode when the source supports it (see Structured Steps below for how to encode them). If adapting from a recipe that was not written for the requested machine, say the saved method is generated/adapted content.
+
+## Structured Steps
+
+A flat recipe is steps passed as plain strings. To get a guided recipe with machine settings, pass each step as a dict and populate the structured fields. A step with no setting fields stays a plain instruction; the moment you set `mode`, `speed`, `time_seconds`, `temperature_c/f`, or `reverse`, the tool emits a structured annotation.
+
+Step fields: `text` (required prose), `time_seconds` (1..5940), `temperature_c`, `temperature_f`, `speed`, `reverse` (bool), `mode`, `accessory`, `pulse_count`, `power`, `anchor`, `annotations` (raw pass-through, advanced only).
+
+**One setting per step.** Matches the real machine and the editor. Split multi-setting source steps into one step each.
+
+**Anchor the marker in prose.** Write the setting into the text the way Cookidoo does ("...whisk 6 min/speed 3.5") so the annotation anchors exactly in place. If the marker is absent from `text`, the tool appends a canonical one. Use `anchor` to point at an existing substring when the wording differs.
+
+### TTS steps (time / temp / speed / direction)
+
+- `temperature_c` enum: OFF, 37, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 98, 100, 105, 110, 115, 120. Off-enum but in-range values snap to nearest. Out-of-range or non-numeric values are dropped and stay in prose (no setting). `temperature_f` has its own enum.
+- `speed`: "soft" (Spoon / soft-stir) or 0.5..5 manual. 6..8 only inside `mode=BLEND`.
+- `reverse=true` → counter-clockwise (Linkslauf).
+
+### MODE steps
+
+Set `mode` to one name. Each mode emits only its own keys; anything else you pass is silently dropped.
+
+| mode | emits | use for |
+|------|-------|---------|
+| DOUGH | time | kneading |
+| BLEND | time, speed | high-speed 6..8 |
+| TURBO | time, pulse_count (TM7) | pulses |
+| WARM_UP | temperature, speed | pre-heat |
+| RICE_COOKER | (none) | rice program |
+| STEAMING | time, speed, accessory | Varoma steaming — `accessory` defaults to "Varoma" |
+| BROWNING | time, temperature, power (TM7) | sauté / sear |
+
+`pulse_count` and `power` only emit when the draft `tm_model` is TM7; otherwise dropped.
+
+### Not doable → keep in prose, never in fields
+
+These have no structured representation. Write them explicitly in `text` and pass no setting fields for them — never approximate with a structured value:
+
+- Named programs: Sous-vide, Slow Cook, Fermentation, Egg boiler, Sugar/Caramelize, TM6/TM7 High-Temperature.
+- Non-Varoma accessories: butterfly whisk, simmering basket, spatula, measuring-cup on/off, blade cover, peeler/cutter.
+- Exact non-enum temperatures (e.g. 63 °C sous-vide).
+
+Example prose: `"Sous-vide 63 °C / 45 min (set program manually)"`. Passing `temperature_c=63` would snap to 65 and lie about the setting.
+
+### Mapping a source recipe
+
+Read each source step, identify its time/temp/speed/direction or named mode, fill the matching fields, and keep the prose readable. If it is a not-doable program or accessory, render it in prose only.
+
+Worked example — three source steps mapped to `steps`:
+
+```python
+steps=[
+    # 1. TTS: chop onion
+    {"text": "Chop onion 5 sec/speed 5.", "time_seconds": 5, "speed": "5"},
+    # 2. Varoma steaming
+    {"text": "Place fish in Varoma and steam 15 min/Varoma/speed 1.",
+     "time_seconds": 900, "speed": "1", "mode": "STEAMING"},
+    # 3. Not doable: sous-vide — prose only, no structured fields
+    {"text": "Sous-vide the fillet 63 °C / 45 min (set program manually)."},
+]
+```
 
 ## Error Handling
 

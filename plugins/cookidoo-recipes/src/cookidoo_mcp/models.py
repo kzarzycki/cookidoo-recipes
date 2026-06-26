@@ -3,6 +3,88 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import Any
 
+# --- Thermomix machine-setting vocabulary (from the Cookidoo web editor bundle) ---
+# Temperature is a fixed enum, not continuous. Values are stored as strings.
+TEMP_C_ENUM = (
+    "OFF", "37", "40", "45", "50", "55", "60", "65", "70", "75",
+    "80", "85", "90", "95", "98", "100", "105", "110", "115", "120",
+)
+TEMP_F_ENUM = (
+    "OFF", "100", "105", "110", "120", "130", "140", "150", "160", "170",
+    "175", "185", "195", "200", "205", "212", "220", "230", "240", "250",
+)
+# Manual / TTS speeds. "soft" is the Spoon / soft-stir setting.
+SPEED_TTS_ENUM = ("soft", "0.5", "1", "1.5", "2", "2.5", "3", "3.5", "4", "4.5", "5")
+# High-speed blend mode speeds (BLEND mode only).
+SPEED_BLEND_ENUM = ("6", "6.5", "7", "7.5", "8")
+# MODE names emitted by the cr-mode element's getAnnotationName().
+MODE_NAMES = (
+    "DOUGH", "BLEND", "TURBO", "WARM_UP", "RICE_COOKER", "STEAMING", "BROWNING",
+)
+TIME_MIN_S = 1
+TIME_MAX_S = 5940  # 99 min
+
+# Blade direction. Forward ("CW") is the default and is OMITTED from the wire
+# payload (the captured forward TTS carries no `direction` key). Only the reverse
+# / Linkslauf (counter-clockwise) value is emitted, under the `direction` key.
+# NOTE: the exact reverse literal could not be locked from the captures (the
+# lava-cake save has no reverse step and the editor renders reverse as a glyph).
+# "CCW" is the documented best guess; confirm with one live Linkslauf capture.
+REVERSE_DIRECTION = "CCW"
+
+
+def _format_duration(seconds: int) -> str:
+    minutes, secs = divmod(int(seconds), 60)
+    if minutes and secs:
+        return f"{minutes} min {secs} sec"
+    if minutes:
+        return f"{minutes} min"
+    return f"{secs} sec"
+
+
+def _snap_temperature(value: Any, unit: str) -> str | None:
+    """Map a requested temperature onto the fixed C/F enum.
+
+    Returns the matching enum string, or None if it cannot be represented
+    (caller then leaves the temperature in prose instead of faking a setting).
+    """
+    if value is None:
+        return None
+    enum = TEMP_F_ENUM if unit == "F" else TEMP_C_ENUM
+    text = str(value).strip()
+    if text.upper() == "OFF":
+        return "OFF"
+    if text in enum:
+        return text
+    try:
+        requested = float(text)
+    except ValueError:
+        return None
+    numeric = [(float(v), v) for v in enum if v != "OFF"]
+    lo = numeric[0][0]
+    hi = numeric[-1][0]
+    if requested < lo or requested > hi:
+        return None  # out of range -> not a real setting, keep in prose
+    # snap to nearest allowed step
+    return min(numeric, key=lambda pair: abs(pair[0] - requested))[1]
+
+
+def _normalize_speed(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if text in ("soft", "spoon", "soft-stir", "softstir"):
+        return "soft"
+    # allow "5" or "5.0" -> "5"; "3.5" stays "3.5"
+    try:
+        num = float(text)
+    except ValueError:
+        return None
+    rendered = ("%g" % num)
+    if rendered in SPEED_TTS_ENUM or rendered in SPEED_BLEND_ENUM:
+        return rendered
+    return None
+
 
 def _list(value: Any) -> list[str]:
     if value is None:
@@ -135,13 +217,45 @@ class RecipeSummary:
 
 @dataclass
 class RecipeStep:
+    """One recipe step plus its optional Thermomix machine setting.
+
+    Setting fields drive a structured ``TTS`` or ``MODE`` annotation on the
+    Cookidoo created-recipe PATCH. They are independent of how the step prose is
+    worded: the annotation is anchored to ``anchor`` (a substring of ``text``) or,
+    if that is absent/not found, to a canonical marker appended to ``text``.
+
+    Fields:
+      text            instruction prose (required)
+      time_seconds    1..5940 (mode-specific max); duration of the setting
+      temperature_c   manual temperature; snapped to the fixed C enum (37..120/OFF)
+      temperature_f   manual temperature in Fahrenheit (snapped to the F enum)
+      speed           "soft" (Spoon) | "0.5".."5" (manual) | "6".."8" (BLEND mode)
+      reverse         True -> counter-clockwise / Linkslauf blade direction
+      mode            one of DOUGH, BLEND, TURBO, WARM_UP, RICE_COOKER, STEAMING,
+                      BROWNING -> emits a MODE annotation instead of plain TTS
+      accessory       physical accessory for the mode; only "Varoma" (STEAMING)
+                      is a structured value, everything else must go in prose
+      pulse_count     TURBO pulse count (TM7 only)
+      power           BROWNING power level (TM7 only)
+      tm_model        "TM6"|"TM7" (gates TM7-only params); inherited from the draft
+      anchor          substring of text the annotation attaches to; if omitted the
+                      canonical marker is appended to text and anchored there
+      annotations     pre-built annotation dicts (pass-through, advanced use)
+    """
+
     title: str = ""
     text: str = ""
     time_seconds: int | None = None
     temperature_c: int | None = None
+    temperature_f: int | None = None
     speed: str | None = None
     reverse: bool = False
     mode: str | None = None
+    accessory: str | None = None
+    pulse_count: int | None = None
+    power: str | None = None
+    tm_model: str | None = None
+    anchor: str | None = None
     annotations: list[dict[str, Any]] = field(default_factory=list)
 
     @classmethod
@@ -155,9 +269,15 @@ class RecipeStep:
             text=str(value.get("text") or value.get("description") or ""),
             time_seconds=value.get("time_seconds"),
             temperature_c=value.get("temperature_c"),
+            temperature_f=value.get("temperature_f"),
             speed=value.get("speed"),
             reverse=bool(value.get("reverse", False)),
             mode=value.get("mode"),
+            accessory=value.get("accessory"),
+            pulse_count=value.get("pulse_count"),
+            power=value.get("power"),
+            tm_model=value.get("tm_model"),
+            anchor=value.get("anchor"),
             annotations=list(value.get("annotations") or []),
         )
 
@@ -167,39 +287,153 @@ class RecipeStep:
             "text": self.text,
             "time_seconds": self.time_seconds,
             "temperature_c": self.temperature_c,
+            "temperature_f": self.temperature_f,
             "speed": self.speed,
             "reverse": self.reverse,
             "mode": self.mode,
+            "accessory": self.accessory,
+            "pulse_count": self.pulse_count,
+            "power": self.power,
+            "anchor": self.anchor,
             "annotations": self.annotations,
         }
+
+    # --- annotation building --------------------------------------------------
+
+    def _temp_for_annotation(self) -> dict[str, str] | None:
+        if self.temperature_f is not None:
+            value = _snap_temperature(self.temperature_f, "F")
+            return {"value": value, "unit": "F"} if value is not None else None
+        if self.temperature_c is not None:
+            value = _snap_temperature(self.temperature_c, "C")
+            return {"value": value, "unit": "C"} if value is not None else None
+        return None
+
+    def _has_setting(self) -> bool:
+        return bool(
+            self.mode
+            or self.speed
+            or self.time_seconds
+            or self.temperature_c is not None
+            or self.temperature_f is not None
+            or self.reverse
+        )
+
+    def _anchored_text_and_position(self, marker: str) -> tuple[str, dict[str, int]]:
+        """Anchor an annotation to text. Prefer self.anchor, else find the marker,
+        else append the canonical marker so the annotation always anchors."""
+        if self.anchor and self.anchor in self.text:
+            offset = self.text.find(self.anchor)
+            return self.text, {"offset": offset, "length": len(self.anchor)}
+        if marker and marker in self.text:
+            offset = self.text.find(marker)
+            return self.text, {"offset": offset, "length": len(marker)}
+        if not marker:
+            # nothing human-readable to anchor; attach to the whole step text
+            return self.text, {"offset": 0, "length": len(self.text)}
+        text = self.text.rstrip()
+        joined = f"{text} {marker}".strip()
+        offset = joined.rfind(marker)
+        return joined, {"offset": offset, "length": len(marker)}
 
     def to_cookidoo_instruction(self) -> dict[str, Any]:
         if self.annotations:
             return {"type": "STEP", "text": self.text, "annotations": self.annotations}
-        annotations: list[dict[str, Any]] = []
-        if self.speed and self.time_seconds:
-            marker = self._tts_marker()
-            offset = self.text.find(marker) if marker else -1
-            if offset >= 0:
-                data: dict[str, Any] = {"speed": str(self.speed), "time": int(self.time_seconds)}
-                if self.temperature_c:
-                    data["temperature"] = {"value": str(self.temperature_c), "unit": "C"}
-                annotations.append(
-                    {
-                        "type": "TTS",
-                        "data": data,
-                        "position": {"offset": offset, "length": len(marker)},
-                    }
-                )
-        return {"type": "STEP", "text": self.text, "annotations": annotations}
+        if not self._has_setting():
+            return {"type": "STEP", "text": self.text, "annotations": [], "missedUsages": []}
+
+        mode = self.mode.strip().upper().replace(" ", "_").replace("-", "_") if self.mode else None
+        if mode in MODE_NAMES:
+            return self._mode_instruction(mode)
+        # Unknown mode names (named TM programs etc.) cannot be structured: keep
+        # whatever speed/time/temp can be, but never invent a MODE annotation.
+        return self._tts_instruction()
+
+    def _tts_instruction(self) -> dict[str, Any]:
+        data: dict[str, Any] = {}
+        speed = _normalize_speed(self.speed)
+        if speed is not None:
+            data["speed"] = speed
+        if self.time_seconds:
+            data["time"] = int(self.time_seconds)
+        temp = self._temp_for_annotation()
+        if temp is not None:
+            data["temperature"] = temp
+        if self.reverse:
+            data["direction"] = REVERSE_DIRECTION
+        if not data:
+            return {"type": "STEP", "text": self.text, "annotations": [], "missedUsages": []}
+        text, position = self._anchored_text_and_position(self._tts_marker())
+        return {
+            "type": "STEP",
+            "text": text,
+            "annotations": [{"type": "TTS", "position": position, "data": data}],
+            "missedUsages": [],
+        }
+
+    # Per-mode data keys, mirroring the editor's getAnnotationData() bodies.
+    # Only these keys are emitted for each MODE (null values dropped, like k()).
+    _MODE_DATA_KEYS = {
+        "DOUGH": ("time",),
+        "BLEND": ("time", "speed"),
+        "TURBO": ("time", "pulseCount"),  # pulseCount TM7-only
+        "WARM_UP": ("temperature", "speed"),
+        "RICE_COOKER": (),
+        "STEAMING": ("time", "speed", "direction", "accessory"),
+        "BROWNING": ("time", "temperature", "power"),  # power TM7-only
+    }
+
+    def _mode_instruction(self, mode: str) -> dict[str, Any]:
+        is_tm7 = (self.tm_model or "").upper() == "TM7"
+        candidates: dict[str, Any] = {}
+        speed = _normalize_speed(self.speed)
+        if speed is not None:
+            candidates["speed"] = speed
+        if self.time_seconds:
+            candidates["time"] = int(self.time_seconds)
+        temp = self._temp_for_annotation()
+        if temp is not None:
+            candidates["temperature"] = temp
+        if self.reverse:
+            candidates["direction"] = REVERSE_DIRECTION
+        accessory = self.accessory or ("Varoma" if mode == "STEAMING" else None)
+        if accessory:
+            candidates["accessory"] = accessory
+        if self.pulse_count is not None and is_tm7:
+            candidates["pulseCount"] = int(self.pulse_count)
+        if self.power is not None and is_tm7:
+            candidates["power"] = str(self.power)
+        allowed = self._MODE_DATA_KEYS.get(mode, ())
+        data = {key: candidates[key] for key in allowed if key in candidates}
+        text, position = self._anchored_text_and_position(self._mode_marker(mode))
+        return {
+            "type": "STEP",
+            "text": text,
+            "annotations": [{"type": "MODE", "name": mode, "position": position, "data": data}],
+            "missedUsages": [],
+        }
 
     def _tts_marker(self) -> str:
-        if not self.speed or not self.time_seconds:
-            return ""
-        minutes, seconds = divmod(int(self.time_seconds), 60)
-        duration = f"{minutes} min" if seconds == 0 and minutes else f"{self.time_seconds} sec"
-        temp = f"/{self.temperature_c}°C" if self.temperature_c else ""
-        return f"{duration}{temp}/speed {self.speed}"
+        parts: list[str] = []
+        if self.time_seconds:
+            parts.append(_format_duration(int(self.time_seconds)))
+        temp = self._temp_for_annotation()
+        if temp is not None and temp["value"] != "OFF":
+            symbol = "°C" if temp["unit"] == "C" else "°F"
+            parts.append(f"{temp['value']}{symbol}")
+        if self.reverse:
+            parts.append("reverse")
+        speed = _normalize_speed(self.speed)
+        if speed is not None:
+            parts.append(f"speed {speed}")
+        return "/".join(parts)
+
+    def _mode_marker(self, mode: str) -> str:
+        label = mode.replace("_", " ").title()
+        if mode == "STEAMING":
+            label = "Varoma"
+        duration = _format_duration(int(self.time_seconds)) if self.time_seconds else ""
+        return f"{label} {duration}".strip() if duration else label
 
 
 @dataclass
@@ -307,6 +541,11 @@ class RecipeDraft:
         self.steps = [RecipeStep.from_any(step) for step in self.steps]
         tm_model = _optional_text(self.tm_model)
         self.tm_model = tm_model.upper() if tm_model else None
+        # Propagate the draft's machine model to steps so TM7-only params
+        # (pulseCount, power) are gated correctly per step.
+        for step in self.steps:
+            if step.tm_model is None:
+                step.tm_model = self.tm_model
 
     def to_create_payload(self) -> dict[str, Any]:
         patch_payload = self.to_cookidoo_patch_payload()
