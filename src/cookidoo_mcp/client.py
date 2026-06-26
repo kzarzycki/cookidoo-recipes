@@ -4,6 +4,7 @@ import dataclasses
 from datetime import date
 from http import HTTPStatus
 import json
+import re
 import sys
 import time
 from typing import Any
@@ -35,6 +36,16 @@ class CookidooClientError(RuntimeError):
     # 401/403). The MCP tool layer surfaces this as reLoginNeeded so the agent
     # knows to re-seed the cookie jar rather than retry.
     relogin_needed: bool = False
+
+
+# User-created ("custom") recipes have ULID ids (26 chars, Crockford base32,
+# first char 0-7); public Cookidoo recipes do not. Used to pick which recipe
+# endpoint to try first in get_recipe.
+_ULID_RE = re.compile(r"^[0-7][0-9A-HJKMNP-TV-Z]{25}$")
+
+
+def _is_ulid(value: str) -> bool:
+    return bool(_ULID_RE.match(value))
 
 
 def _sanitize_error(operation: str, exc: Exception) -> CookidooClientError:
@@ -155,14 +166,21 @@ class CookidooClient:
 
     async def get_recipe(self, recipe_id: str) -> RecipeDetail:
         upstream = await self._get_upstream()
-        try:
-            if hasattr(upstream, "get_recipe_details"):
-                payload = await upstream.get_recipe_details(recipe_id)
-            else:
-                payload = await upstream.get_recipe(recipe_id)
-        except Exception as exc:
-            raise _sanitize_error("get recipe", exc) from exc
-        return RecipeDetail.from_upstream(payload)
+        # Custom (user-created) recipes live on get_custom_recipe; public ones on
+        # get_recipe_details. Callers pass only an id, so try the likely endpoint
+        # by id shape and fall back to the other — fixes get_recipe on ULID ids,
+        # which only the public endpoint was tried for before (and 404s there).
+        public = getattr(upstream, "get_recipe_details", None) or getattr(upstream, "get_recipe", None)
+        custom = getattr(upstream, "get_custom_recipe", None)
+        attempts = [custom, public] if _is_ulid(recipe_id) else [public, custom]
+        attempts = [fn for fn in attempts if fn is not None]
+        last_exc: Exception | None = None
+        for fetch in attempts:
+            try:
+                return RecipeDetail.from_upstream(await fetch(recipe_id))
+            except Exception as exc:  # try the other endpoint before giving up
+                last_exc = exc
+        raise _sanitize_error("get recipe", last_exc or RuntimeError("no recipe endpoint available"))
 
     async def list_my_recipes(self, locale: str | None = None) -> list[RecipeSummary]:
         upstream = await self._get_upstream()
