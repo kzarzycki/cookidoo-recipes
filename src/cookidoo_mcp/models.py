@@ -17,19 +17,32 @@ TEMP_F_ENUM = (
 SPEED_TTS_ENUM = ("soft", "0.5", "1", "1.5", "2", "2.5", "3", "3.5", "4", "4.5", "5")
 # High-speed blend mode speeds (BLEND mode only).
 SPEED_BLEND_ENUM = ("6", "6.5", "7", "7.5", "8")
-# MODE names emitted by the cr-mode element's getAnnotationName().
+# MODE names. The created-recipe API expects LOWERCASE wire literals (proven live:
+# uppercase is tolerated/normalized but the canonical literal is lowercase, matching
+# the recode-software/cookidoo-api client and the editor's mode registry keys).
 MODE_NAMES = (
     "DOUGH", "BLEND", "TURBO", "WARM_UP", "RICE_COOKER", "STEAMING", "BROWNING",
 )
+# BROWNING uses its OWN temperature enum (not the manual C enum). Live: 140..160 °C
+# persist; manual-range temps (e.g. 105) are 400-rejected for browning.
+TEMP_BROWNING_C_ENUM = ("140", "145", "150", "155", "160")
+# BROWNING power is an enum, NOT a speed. Live: "Gentle"/"Intense" persist; numeric
+# values (e.g. "5") cause the whole MODE annotation to be silently stripped.
+BROWNING_POWER_ENUM = ("Gentle", "Intense")
+# TURBO requires pulseCount on the wire (live: omitting it 400-rejects the PATCH).
+TURBO_DEFAULT_PULSE_COUNT = 1
+# TURBO time is an enum of seconds, not a duration. Live: 1 and 2 persist;
+# time:3 and an absent time both 400/strip. Out-of-range turbo settings fall
+# back to a surviving TTS/prose encoding rather than emit a stripped annotation.
+TURBO_TIME_ENUM = (1, 2)
 TIME_MIN_S = 1
 TIME_MAX_S = 5940  # 99 min
 
-# Blade direction. Forward ("CW") is the default and is OMITTED from the wire
-# payload (the captured forward TTS carries no `direction` key). Only the reverse
-# / Linkslauf (counter-clockwise) value is emitted, under the `direction` key.
-# NOTE: the exact reverse literal could not be locked from the captures (the
-# lava-cake save has no reverse step and the editor renders reverse as a glyph).
-# "CCW" is the documented best guess; confirm with one live Linkslauf capture.
+# Blade direction. Forward = "CW", reverse / Linkslauf = "CCW" (live-verified,
+# case-sensitive uppercase; closes GH #2). On TTS the forward "CW" is OMITTED
+# (the captured forward TTS carries no `direction` key); STEAMING MODE, by
+# contrast, REQUIRES a direction, so it defaults to "CW" when not reverse.
+FORWARD_DIRECTION = "CW"
 REVERSE_DIRECTION = "CCW"
 
 
@@ -344,6 +357,10 @@ class RecipeStep:
 
         mode = self.mode.strip().upper().replace(" ", "_").replace("-", "_") if self.mode else None
         if mode in MODE_NAMES:
+            # TURBO time is an enum {1,2}; anything else would 400/strip on save.
+            # Fall back to a surviving TTS/prose encoding instead.
+            if mode == "TURBO" and (self.time_seconds is None or int(self.time_seconds) not in TURBO_TIME_ENUM):
+                return self._tts_instruction()
             return self._mode_instruction(mode)
         # Unknown mode names (named TM programs etc.) cannot be structured: keep
         # whatever speed/time/temp can be, but never invent a MODE annotation.
@@ -391,27 +408,75 @@ class RecipeStep:
             candidates["speed"] = speed
         if self.time_seconds:
             candidates["time"] = int(self.time_seconds)
-        temp = self._temp_for_annotation()
-        if temp is not None:
-            candidates["temperature"] = temp
+        # BROWNING has its own temperature enum (140..160) and a required power enum.
+        if mode == "BROWNING":
+            temp = self._browning_temp()
+            if temp is not None:
+                candidates["temperature"] = temp
+            candidates["power"] = self._browning_power()
+        else:
+            temp = self._temp_for_annotation()
+            if temp is not None:
+                candidates["temperature"] = temp
         if self.reverse:
             candidates["direction"] = REVERSE_DIRECTION
+        elif mode == "STEAMING":
+            # STEAMING MODE requires a direction; default forward when not reverse.
+            candidates["direction"] = FORWARD_DIRECTION
         accessory = self.accessory or ("Varoma" if mode == "STEAMING" else None)
         if accessory:
             candidates["accessory"] = accessory
-        if self.pulse_count is not None and is_tm7:
-            candidates["pulseCount"] = int(self.pulse_count)
-        if self.power is not None and is_tm7:
-            candidates["power"] = str(self.power)
+        # TURBO requires pulseCount on the wire; default it if unset.
+        if mode == "TURBO":
+            candidates["pulseCount"] = int(self.pulse_count) if self.pulse_count is not None else TURBO_DEFAULT_PULSE_COUNT
         allowed = self._MODE_DATA_KEYS.get(mode, ())
         data = {key: candidates[key] for key in allowed if key in candidates}
         text, position = self._anchored_text_and_position(self._mode_marker(mode))
         return {
             "type": "STEP",
             "text": text,
-            "annotations": [{"type": "MODE", "name": mode, "position": position, "data": data}],
+            # Lowercase wire literal — the API's canonical MODE name (live-verified).
+            "annotations": [{"type": "MODE", "name": mode.lower(), "position": position, "data": data}],
             "missedUsages": [],
         }
+
+    def _browning_temp(self) -> dict[str, str] | None:
+        """Snap a requested browning temperature to the browning enum (140..160 C).
+
+        Browning rejects manual-range temps; below 140 -> None (prose), above 160
+        -> clamp to 160, in-between -> nearest enum step.
+        """
+        raw = self.temperature_c if self.temperature_c is not None else self.temperature_f
+        if raw is None:
+            return None
+        try:
+            requested = float(str(raw).strip())
+        except ValueError:
+            return None
+        numeric = [(float(v), v) for v in TEMP_BROWNING_C_ENUM]
+        if requested < numeric[0][0] - 5:
+            return None  # well below browning range -> keep in prose
+        if requested > numeric[-1][0]:
+            return {"value": numeric[-1][1], "unit": "C"}
+        nearest = min(numeric, key=lambda pair: abs(pair[0] - requested))[1]
+        return {"value": nearest, "unit": "C"}
+
+    def _browning_power(self) -> str:
+        """Coerce the power field to the BROWNING power enum (Gentle/Intense).
+
+        Numeric/invalid values would silently strip the whole annotation, so we map
+        them to a valid level: high speeds/levels -> Intense, else Gentle.
+        """
+        if self.power is None:
+            return "Gentle"
+        text = str(self.power).strip()
+        for level in BROWNING_POWER_ENUM:
+            if text.lower() == level.lower():
+                return level
+        try:
+            return "Intense" if float(text) >= 5 else "Gentle"
+        except ValueError:
+            return "Gentle"
 
     def _tts_marker(self) -> str:
         parts: list[str] = []
